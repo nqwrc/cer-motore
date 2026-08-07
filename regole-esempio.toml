@@ -1,0 +1,69 @@
+# Regole di ripartizione della CER — file di esempio
+#
+# Questo file traduce in numeri quello che lo statuto della comunità dice a parole:
+# quanto si trattiene per il funzionamento, come si divide il resto fra chi produce e
+# chi consuma, e con quale criterio si ripartisce dentro ciascuno dei due gruppi.
+# È pensato per essere letto e discusso in assemblea, non solo dal computer.
+#
+# Come si legge:
+#   - le righe che iniziano con # sono commenti: il motore le ignora, servono a voi.
+#     Usatele per citare l'articolo dello statuto o la delibera che ha deciso il numero;
+#   - le percentuali si scrivono FRA VIRGOLETTE e come frazione di 1:
+#     il 10% è "0.10", il 50% è "0.50", il 100% è "1". Va bene anche la virgola: "0,10".
+#     Le virgolette non sono un capriccio: senza, il computer arrotonda i decimali per
+#     conto suo e il rendiconto può sbagliare di qualche centesimo (docs/REGOLE.md);
+#   - se sbagliate qualcosa il motore si ferma e vi dice quale riga e cosa aspettava.
+#     Non tira a indovinare: un errore di battitura non deve spostare denaro.
+#
+# Lo schema completo, campo per campo, è in docs/REGOLE.md.
+# Questo esempio riproduce le regole usate dalla demo (`python -m cer_motore`).
+
+
+# --- Fondi comuni ------------------------------------------------------------------
+# Percentuali trattenute PRIMA di ogni altra cosa, sull'incentivo del periodo.
+# Il nome del fondo è libero e compare così com'è nel rendiconto.
+# La sezione si può togliere del tutto: senza fondi, si ripartisce tutto ai soci.
+# La somma dei fondi non può superare 1 (cioè il 100% dell'incentivo).
+
+[fondi]
+gestione = "0.10"   # 10% alle spese di gestione della comunità (assicurazione, commercialista)
+# solidarieta = "0.05"   # esempio di secondo fondo: togliere il # per attivarlo
+
+
+# --- Divisione fra i due gruppi ----------------------------------------------------
+# Quello che resta dopo i fondi si divide fra il blocco di chi immette energia
+# (produttori e prosumer) e il blocco di chi la consuma (consumatori e prosumer).
+# Le due quote devono sommare esattamente a 1: tutto il residuo va ripartito.
+# Chi è prosumer sta in tutti e due i blocchi e prende due quote distinte.
+
+[quote]
+produttori = "0.50"    # metà a chi ha messo l'impianto
+consumatori = "0.50"   # metà a chi ha consumato quando l'impianto produceva
+
+
+# --- Criteri dentro ciascun gruppo -------------------------------------------------
+# Come si divide la quota del gruppo fra i suoi membri.
+#
+# Per i produttori:
+#   "energia_immessa"  in proporzione ai kWh immessi in rete nel periodo;
+#   "quote_uguali"     parti uguali fra tutti i produttori, indipendentemente dai kWh.
+#
+# Per i consumatori:
+#   "prelievo_coincidente"  in proporzione all'energia prelevata NELLE ORE in cui la
+#                           comunità ha condiviso energia. È il criterio più diffuso
+#                           negli statuti: premia chi sposta i consumi quando c'è sole,
+#                           che è anche ciò che fa crescere l'incentivo per tutti;
+#   "quote_uguali"          parti uguali fra tutti i consumatori.
+
+[criteri]
+produttori = "energia_immessa"
+consumatori = "prelievo_coincidente"
+
+
+# --- Quello che NON si decide qui --------------------------------------------------
+# Non ci sono qui le tariffe, le soglie e i correttivi geografici: non sono scelte
+# della comunità, sono legge (DM CACER 414/2023, Regole Operative GSE). Stanno nel
+# motore, in `tariffe.py`, ognuna con la sua fonte e la sua data.
+# Non si decide qui nemmeno la destinazione dell'importo eccedentario: le Regole
+# Operative (pag. 41) la vincolano ai soli consumatori diversi dalle imprese e alle
+# finalità sociali sui territori degli impianti, e il motore la applica da sé.

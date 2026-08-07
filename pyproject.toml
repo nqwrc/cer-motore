@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cer-motore"
+version = "0.0.1"
+description = "Motore di calcolo aperto per le comunità energetiche rinnovabili italiane (CER): energia condivisa, incentivi CACER, ripartizione e rendiconti per membro."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Nicola Pandolfi" }]
+keywords = ["CER", "comunita-energetiche", "GSE", "CACER", "energia-condivisa"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
