@@ -1,0 +1,64 @@
+# CI del motore: i test su tutte le versioni di Python dichiarate in
+# `requires-python`, su Linux e su Windows.
+#
+# Windows non è ridondante: `__main__.py` riconfigura `sys.stdout` perché una
+# console con code page 850 o 437 non uccida la demo sull'em dash e sul simbolo
+# dell'euro, e quel codice su Linux non viene mai eseguito. Una CI solo-Linux non
+# lo vedrebbe mai. (Non cp1252, che invece regge tutti i caratteri stampati dal
+# rendiconto: la code page che conta è quella della console, non quella ANSI.)
+#
+# Deliberatamente NON c'è un passo di lint o di formattazione: il progetto non ha
+# un formattatore configurato, e una CI che boccia su regole mai concordate è
+# rumore che scoraggia i contributi. Si aggiunge quando (e se) si sceglie lo
+# strumento.
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Sola lettura: il workflow non scrive nulla sul repository.
+permissions:
+  contents: read
+
+# Un push che ne supera un altro sullo stesso ramo annulla il run precedente.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} su ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Un fallimento solo su Windows non deve cancellare i job Linux: serve
+      # sapere se il problema è del sistema operativo o del codice.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout del repository
+        uses: actions/checkout@v7
+
+      - name: Installazione di Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Installazione del pacchetto e delle dipendenze di sviluppo
+        run: python -m pip install -e ".[dev]"
+
+      - name: Test
+        run: python -m pytest tests/ -q
+
+      # La promessa del README è che un estraneo ottenga un risultato utile in
+      # meno di 15 minuti: la demo end-to-end è quella promessa, quindi va
+      # presidiata su entrambi i sistemi operativi. Scrive sotto ./data/ relativo
+      # alla cartella corrente, che qui è la radice del repository (già in
+      # .gitignore): niente da preparare e niente da ripulire.
+      - name: Smoke test della demo end-to-end
+        run: python -m cer_motore

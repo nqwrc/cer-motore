@@ -1,4 +1,4 @@
-# Roadmap verso la v0.1 — da trasformare in GitHub Issues al primo push
+# Roadmap verso la v0.1
 
 In ordine di priorità. Il gate della v0.1 (Fase 3 della roadmap open source personale, repo
 privato `personal-archive`): un estraneo installa e ottiene un risultato utile in meno di 15 minuti.
@@ -29,9 +29,9 @@ privato `personal-archive`): un estraneo installa e ottiene un risultato utile i
    immissione nulla gestite. Rendiconto della demo invariato byte per byte.
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
-4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test, di cui
-   una trentina sono casi a mano veri (calcolo passo per passo nel commento) e il resto
-   guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
+4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
+   **136 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
+   commento) e il resto guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
    periodo interamente senza immissioni, arrotondamenti cattivi al centesimo, bordi del cap.
 
 ## Da fare

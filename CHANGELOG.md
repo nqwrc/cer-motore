@@ -1,0 +1,181 @@
+# Changelog
+
+Tutte le modifiche degne di nota a `cer-motore` sono annotate qui.
+
+Il formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) e il progetto
+adotta il [versionamento semantico](https://semver.org/lang/it/).
+
+**Convenzione di questo progetto**: quando una modifica sposta denaro fra i membri, la voce
+ne dichiara l'entità con un numero. "Corretto un errore di arrotondamento" non è
+un'informazione; "sovrastimava l'importo eccedentario fino al 79%" lo è.
+
+Il progetto è in fase di **spike pre-v0.1**: non esiste ancora alcuna release pubblicata,
+quindi tutto il lavoro svolto finora sta sotto `[Non rilasciato]`. Lo stato dei punti aperti
+e il piano verso la v0.1 stanno in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## [Non rilasciato]
+
+Il repository è stato pubblicato su <https://github.com/nqwrc/cer-motore> l'8 agosto 2026,
+con licenza MIT. Il lavoro qui sotto è quello precedente alla pubblicazione, ricostruito
+dalla sezione "Fatti" di `docs/ROADMAP.md`.
+
+### Aggiunto
+
+- Motore di calcolo completo dalla misura oraria al rendiconto per membro: energia condivisa
+  (`condivisione.py`), tariffa premio e valorizzazione ARERA (`tariffe.py`), ripartizione
+  statutaria in centesimi (`ripartizione.py`), rendiconto in Markdown (`rendiconto.py`).
+  Solo libreria standard, Python 3.11+.
+- `condivisione.alloca_oraria` — attribuzione dell'energia condivisa ai singoli impianti,
+  pro-quota oraria delle immissioni (*7 agosto 2026*). Prima il calcolo era inline nella
+  demo. L'invariante `somma(quote) == EC_h` è **esatto**, garantito dal metodo del resto
+  maggiore su unità da 1e-6 kWh: la sola divisione `Decimal` non lo conserva. Gestite le ore
+  a immissione nulla. Il rendiconto della demo è rimasto invariato byte per byte.
+- `ripartizione.InsiemeIncentivato` e `scomponi_eccedentario_insiemi` — aggregazione degli
+  impianti incentivati nei **due insiemi** previsti dalle Regole Operative pag. 42
+  (*7-8 agosto 2026*). Ogni insieme ha il proprio rapporto EC/EI, la propria soglia e il
+  proprio contributo; gli importi eccedentari si sommano solo alla fine. La `soglia` è un
+  campo obbligatorio senza default, e i costruttori `sola_tariffa` /
+  `cumulo_conto_capitale` la pescano dalle costanti di `tariffe.py`. Un test misura l'errore
+  che si commetterebbe aggregando tutto in un insieme solo: **−37%** sull'importo destinato
+  ai non-imprese. La demo attraversa la nuova forma anche avendo un insieme solo, perché una
+  funzione che nessun percorso reale percorre è una funzione di cui non si sa se è cablata
+  bene.
+- `regole.py` — statuto di ripartizione dichiarativo, letto da TOML con `tomllib`, stdlib
+  dalla 3.11, nessuna dipendenza nuova (*7-8 agosto 2026*). L'adapter che tocca il disco
+  (`leggi`) è separato dalle funzioni pure che validano (`valida`, `da_testo`). I decimali
+  non quotati sono **rifiutati**, non convertiti: il TOML ha i float nativi e `Decimal(0.1)`
+  non è `Decimal("0.1")`, quindi il messaggio d'errore mostra il valore binario che
+  arriverebbe al motore e come riscrivere la riga. Ogni errore dice quale chiave, che valore
+  ha trovato, cosa si aspettava e come si corregge, con suggerimento sui refusi. Schema in
+  [`docs/REGOLE.md`](docs/REGOLE.md), esempio commentato in `regole-esempio.toml`, che un
+  test tiene allineato allo statuto della demo.
+- Secondo scenario mock `concentrata` (*7 agosto 2026*). `mock.py` non genera più una sola
+  CER: espone uno `Scenario` (impianti, utenze, anagrafica, zone) e ne definisce due, con lo
+  stesso formato di file e lo stesso statuto. `equilibrata` è la configurazione storica,
+  invariata al decimale (rapporto EC/EI 0,272); `concentrata` è una CER artigianale con un FV
+  da 30 kW davanti a un'officina, un supermercato e una palestra comunale, dove il prelievo
+  eccede quasi sempre l'immissione e il rapporto arriva a 0,976. Lì il vincolo eccedentario
+  scatta e 241,72 € dei 567,16 € di tariffa premio vanno ai soli consumatori diversi dalle
+  imprese. Lo scenario esercita anche il ruolo "prosumer", che prima nessun percorso
+  end-to-end toccava.
+- Guardie della primitiva del vincolo eccedentario, in `ripartizione._valida_eccedentario`
+  (*8 agosto 2026*). Vedi "Corretto".
+- Suite di test cresciuta a **136 test**, di cui una parte consistente sono casi risolti a
+  mano con il calcolo passo per passo nel commento (*obiettivo dichiarato: 20 prima della
+  v0.1; superato il 7 agosto 2026*). Coperti prosumer, impianti misti FV / non FV, giorni da
+  23 e 25 ore per il cambio dell'ora legale, periodi interamente senza immissioni,
+  arrotondamenti costruiti apposta per non chiudere, bordi del cap tariffario.
+- Documentazione: [`docs/FORMULE.md`](docs/FORMULE.md) (mappa delle regole con fonte, pagina
+  e stato di verifica), [`docs/MOCK-GSE.md`](docs/MOCK-GSE.md),
+  [`docs/REGOLE.md`](docs/REGOLE.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
+- Documenti di progetto alla pubblicazione del repository (*8 agosto 2026*):
+  [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), questo `CHANGELOG.md`
+  e la licenza [MIT](LICENSE).
+- Integrazione continua con GitHub Actions (*8 agosto 2026*): la suite e la demo end-to-end
+  su Linux e Windows, su Python 3.11, 3.12 e 3.13.
+
+### Corretto
+
+- **Importo eccedentario: frazione invece di differenza in punti percentuali**
+  (*7 agosto 2026*). È la correzione più importante fatta finora, ed è un errore che spostava
+  denaro reale fra categorie di membri. `scomponi_eccedentario` calcolava
+  `(rapporto − soglia) / rapporto`, mentre le Regole Operative pag. 42 prescrivono
+  `max(0; rapporto − soglia)` applicato direttamente al contributo economico:
+
+  ```
+  % E_ACI,ecc,j,n = max[0 ; (E_ACI,j,n / E_immessa,j,n * 100)% − valore soglia]
+  ```
+
+  Con rapporto 0,60 e soglia 0,55 la norma dà il 5% del contributo, la vecchia formula ne
+  dava l'8,33%. **La sovrastima raggiungeva il +79% a rapporto 0,56** — appena sopra la
+  soglia, dove cadono le configurazioni realistiche — e restava dell'11% a rapporto 0,90.
+  L'errore non faceva fallire nulla e non violava alcun invariante contabile: la somma delle
+  quote restava esatta, cambiava solo chi le riceveva. **Tre casi risolti a mano ne pinnavano
+  i valori sbagliati**, perché derivati dalla stessa lettura errata della formula, e sono
+  stati ricalcolati insieme al codice.
+- **Guardie assenti sulla strada che tutti percorrevano** (*8 agosto 2026*). Una verifica
+  avversariale ha trovato che tutte le validazioni stavano su `InsiemeIncentivato`, mentre la
+  demo chiamava la primitiva `scomponi_eccedentario`, scoperta. Cinque attacchi passavano:
+  argomenti scambiati (`EC > EI`) che dichiaravano eccedentario l'88% invece del 15%, base
+  negativa, soglia negativa con eccedentario maggiore del contributo, contributo negativo e
+  — il peggiore — **soglia scritta `55` invece di `0.55`, che azzerava l'importo eccedentario
+  in silenzio**, senza eccezioni e senza numeri assurdi: semplicemente non pagava i
+  consumatori non-imprese. Più un generatore passato al posto della lista, che faceva
+  restituire `(0, 0)` a `scomponi_eccedentario_insiemi` annullando l'intero contributo TIP,
+  con l'`assert` finale complice perché iterava anch'esso sul generatore ormai esaurito.
+  Tutto chiuso, inchiodato da test di regressione, e le guardie sono ora in una funzione
+  sola condivisa dalle due strade.
+- **Arrotondamenti incoerenti nel rendiconto** (*7 agosto 2026, esteso l'8*). L'intestazione
+  non arrotondava affatto in centesimi: formattava i `Decimal` in euro, e il formato `Decimal`
+  usa `ROUND_HALF_EVEN` mentre `in_centesimi` usa `ROUND_HALF_UP`. Con TIP 1,005 € e ARERA
+  2,005 € stampava "1,00 · 2,00 · totale 3,01" sopra una tabella che sommava 3,02: tre numeri
+  incoerenti fra loro e con la tabella. Ha ragione la tabella, perché è la ripartizione a
+  muovere il denaro e riceve `in_centesimi(tip) + in_centesimi(arera)`, quindi l'intestazione
+  è ora costruita su quelle stesse quantità in centesimi e il rendiconto solleva `ValueError`
+  se gli importi ripartiti non ci chiudono sopra. **Estensione dell'8 agosto**: quella
+  guardia riderivava i centesimi dai `Decimal`, dando per scontato che il TIP fosse stato
+  arrotondato una volta sola — falso nel flusso per insiemi, dove ogni insieme porta il
+  proprio contributo già in centesimi interi. Con due insiemi da 1,005 € la ripartizione ne
+  distribuiva 202 e il rendiconto ne pretendeva 201, su dati legittimi. Le chiavi `tip_cent`
+  e `arera_cent` sono ora autorevoli: se ci sono, il rendiconto le usa.
+- **Invariante dichiarato ma non posseduto** in `contributo_prelievo_coincidente`
+  (*7 agosto 2026*). Il docstring prometteva che la somma dei contributi fosse esattamente la
+  somma dell'energia condivisa, ma la funzione usava la divisione semplice: con tre
+  consumatori uguali ed EC = 10 kWh la somma valeva 9,999999999999999999999999999. Non
+  arrivava mai sui soldi — i contributi servono da pesi e `ripartisci_centesimi` li
+  rinormalizza — ma era un'affermazione falsa in un modulo che sull'esattezza fa il proprio
+  punto d'onore. Riportata sulla base del resto maggiore di `alloca_oraria`.
+- **Guardie difettose di `ripartisci()`** (*7-8 agosto 2026*): quote negative che sommavano a
+  1 (`quota_produttori = 1,5` con `quota_consumatori = −0,5` passava e assegnava ai
+  consumatori una quota negativa, con l'invariante di somma comunque soddisfatto — un membro
+  pagava per gli altri), fondi con percentuale negativa, fondi che assorbono più dell'importo
+  base, fondi arrotondati che sfondano il totale.
+
+### Modificato
+
+- **Parte variabile della tariffa premio riportata alla forma normativa** (*7 agosto 2026*).
+  Verifica verbatim sulle Regole Operative pag. 40 e Appendice B §1 pag. 160, confermata dal
+  DM CACER 414/2023 All. 1 §1: la parte variabile è `max(0; 180 − Pz)` con Pz prezzo zonale
+  **orario**, e il tetto normativo è il CAP sulla somma, `min[CAP; TP_base + max(0; 180 − Pz)]`.
+  Il motore usava `max(0, min(40, 180 − Pz))`, che dà gli stessi numeri **solo** perché
+  `CAP − TP_base = 40` in tutti e tre gli scaglioni, e avrebbe sbagliato in silenzio il
+  giorno in cui un aggiornamento avesse mosso i due parametri in modo non parallelo.
+- **Valori soglia del vincolo eccedentario confermati e resi costanti nominate**
+  (*7 agosto 2026*): **55%** per gli impianti a sola tariffa premio, **45%** per quelli in
+  cumulo con contributo in conto capitale, rapporto EC / energia immessa, verifica annuale a
+  conguaglio (Regole Operative pag. 41 e Appendice B §4 pag. 161). Erano un punto aperto con
+  un default provvisorio.
+- La demo `python -m cer_motore` elabora **due** scenari invece di uno, ne stampa il
+  confronto e il rendiconto completo di quello che fa scattare il vincolo. Tutto l'output su
+  disco è raccolto sotto un'unica cartella usa-e-getta `data/`, già ignorata da git.
+
+### Rimosso
+
+- Costante `VAR_MAX = 40` da `tariffe.py` (*7 agosto 2026*). Non esiste un tetto normativo
+  sulla parte variabile: in tutte le 171 pagine delle Regole Operative il valore "40 €/MWh"
+  compare una sola volta, a pag. 39, come campo di variazione del parametro `Z` usato per
+  l'acconto. Vedi "Modificato".
+
+### Note sulla verifica delle fonti
+
+Le formule sono verificate verbatim sul PDF ufficiale delle Regole Operative CACER
+(171 pagine, agg. DD 16/7/2025, approvate con DM MASE 228/2025) e sul DM CACER 414/2023
+Allegato 1, due fonti primarie indipendenti. Il PDF GSE è pubblico, senza login e
+interamente estraibile: il "troncamento" annotato in vecchie note del progetto era un limite
+dello strumento usato allora. Link e hash sha256 in fondo a
+[`docs/FORMULE.md`](docs/FORMULE.md), che riporta per ogni regola la citazione, la pagina e
+lo stato: `[verificato]`, `[assunto]` o `[modellazione]`.
+
+I numeri di pagina citati nel codice e nella documentazione sono quelli **stampati a piè di
+pagina**, sfasati di 1 rispetto all'indice del lettore PDF (Appendice B: pag. stampata 160 =
+pag. 161 del lettore).
+
+### Ancora aperto
+
+Non è ancora stato osservato un export GSE reale dall'area clienti: i dati in ingresso sono
+mock documentati. Restano aperti anche la partizione dell'energia esente dal fattore F per il
+cumulo con conto capitale, uno scenario mock nella fascia critica 0,55–0,70 e alcuni punti di
+robustezza che oggi non spostano denaro. Elenco aggiornato in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+[Non rilasciato]: https://github.com/nqwrc/cer-motore/commits/main

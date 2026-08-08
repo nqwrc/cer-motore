@@ -1,5 +1,9 @@
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 e non >=68: da quella versione setuptools implementa PEP 639, cioè `license`
+# come espressione SPDX e `license-files`. La forma vecchia (`license = { text = "MIT" }`)
+# funziona ancora ma è deprecata e smette di funzionare dopo il 18 febbraio 2027;
+# la forma nuova non compila con setuptools < 77, quindi alzare il minimo è obbligato.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,9 +12,34 @@ version = "0.0.1"
 description = "Motore di calcolo aperto per le comunità energetiche rinnovabili italiane (CER): energia condivisa, incentivi CACER, ripartizione e rendiconti per membro."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Nicola Pandolfi" }]
 keywords = ["CER", "comunita-energetiche", "GSE", "CACER", "energia-condivisa"]
+
+# Lo stato dichiarato qui deve dire la stessa cosa del README ("Stato: spike
+# (pre-v0.1)", "Non usare per riparti reali"): "Pre-Alpha", non "Alpha" e men che
+# meno "Production/Stable". Il classificatore di licenza NON c'è apposta: con
+# `license` come espressione SPDX, setuptools >= 77 considera deprecati i
+# "License :: OSI Approved :: ..." e la licenza sta già nei metadati.
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Natural Language :: Italian",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/nqwrc/cer-motore"
+Repository = "https://github.com/nqwrc/cer-motore"
+Issues = "https://github.com/nqwrc/cer-motore/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

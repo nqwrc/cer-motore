@@ -1,5 +1,7 @@
 # cer-motore
 
+[![Test](https://github.com/nqwrc/cer-motore/actions/workflows/test.yml/badge.svg)](https://github.com/nqwrc/cer-motore/actions/workflows/test.yml)
+
 **Il motore di calcolo aperto per le comunità energetiche rinnovabili italiane.**
 
 Ogni CER deve fare le stesse tre cose, ogni mese, per 20 anni: capire quanta energia è stata
@@ -25,10 +27,17 @@ il motore ne calcolava una frazione — che sovrastimava l'importo fino al 79%. 
 
 ## Prova subito
 
+Serve **Python 3.11 o superiore** e nient'altro: il motore usa solo la libreria standard.
+Il venv non è pignoleria — su Debian, Ubuntu e con Python da Homebrew installare fuori da un
+ambiente virtuale si ferma con `externally-managed-environment` (PEP 668).
+
 ```bash
-pip install -e ".[dev]"
-python -m pytest -q          # casi risolti a mano
-python -m cer_motore         # demo end-to-end su una CER mock romagnola
+git clone https://github.com/nqwrc/cer-motore.git
+cd cer-motore
+python3 -m venv .venv                                  # su Windows: python -m venv .venv
+./.venv/bin/python -m pip install -e ".[dev]"          # Windows: .\.venv\Scripts\python.exe
+./.venv/bin/python -m pytest -q                        # i casi risolti a mano
+./.venv/bin/python -m cer_motore                       # demo end-to-end su due CER mock
 ```
 
 La demo genera un mese di misure orarie, calcola energia condivisa, TIP con cap e correttivo
@@ -58,8 +67,19 @@ in `data/rendiconto-<scenario>.md`. Una sola cartella usa-e-getta, da cancellare
 
 Funzioni pure, denaro in `Decimal` e centesimi (invariante: la somma delle quote è il totale,
 sempre), ogni formula cita la fonte normativa, ogni parametro che può cambiare è una costante
-nominata. Fonti e stato di verifica: `docs/FORMULE.md`.
+nominata. Fonti e stato di verifica: [`docs/FORMULE.md`](docs/FORMULE.md).
+
+## Dove trovare il resto
+
+| | |
+|---|---|
+| Le formule, con citazione verbatim e numero di pagina | [`docs/FORMULE.md`](docs/FORMULE.md) |
+| Lo statuto in TOML: schema, campi, errori | [`docs/REGOLE.md`](docs/REGOLE.md) · [`regole-esempio.toml`](regole-esempio.toml) |
+| Cosa assume il mock sul formato GSE | [`docs/MOCK-GSE.md`](docs/MOCK-GSE.md) |
+| Cosa è fatto e cosa manca | [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`CHANGELOG.md`](CHANGELOG.md) |
+| Come contribuire senza rompere le cose che contano | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| Come segnalare un errore di calcolo | [`SECURITY.md`](SECURITY.md) |
 
 ## Licenza
 
-MIT.
+[MIT](LICENSE).

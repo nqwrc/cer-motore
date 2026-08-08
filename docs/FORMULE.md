@@ -4,9 +4,16 @@ Aggiornata al 7 agosto 2026. Stato di ogni regola: **[verificato]** = letto verb
 documento ufficiale · **[assunto]** = da confermare · **[modellazione]** = scelta di
 implementazione, non imposta dalla norma.
 
-I numeri di pagina delle Regole Operative sono quelli **stampati a piè di pagina** del PDF
-ufficiale (171 pagine, agg. DD 16/7/2025, approvate con DM MASE 228/2025). L'indice del
-lettore PDF è sfasato di 1: l'Appendice B è a pag. stampata 160 = pag. PDF 161.
+**Convenzione sui numeri di pagina, valida per tutto il repository** — documenti, docstring
+del codice e commenti dei test. Ogni "pag. N" delle Regole Operative è il numero **stampato a
+piè di pagina** del PDF ufficiale (171 pagine, agg. DD 16/7/2025, approvate con DM MASE
+228/2025), mai quello dell'indice del lettore PDF, che è sfasato di 1. L'unica eccezione è
+dove sta scritto "PDF" per esteso.
+
+Esempio, perché lo sfasamento crea confusione proprio qui: l'Appendice B comincia a
+**pag. stampata 160**, che il lettore PDF numera 161; i suoi paragrafi §3 e §4 stanno a
+**pag. stampata 161**. Quando altrove si legge "Appendice B §4 pag. 161" è la pagina
+stampata, non la 161 del lettore.
 
 ## 1. Energia condivisa (autoconsumata virtualmente) — [verificato]
 

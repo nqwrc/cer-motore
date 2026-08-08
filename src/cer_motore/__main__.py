@@ -147,9 +147,13 @@ def _euro(cent: int) -> str:
 
 
 def main() -> None:
-    # I rendiconti sono in italiano e usano "·" e "€": su una console Windows con code
-    # page 1252 un carattere fuori tabella farebbe morire la demo con UnicodeEncodeError
-    # invece di stampare. I file su disco restano UTF-8 e completi.
+    # Il rendiconto stampa quattro caratteri fuori dall'ASCII: "·" (U+00B7), "è",
+    # "—" (U+2014) e "€" (U+20AC). Su una console Windows con code page 850 o 437 —
+    # cioè le console vere, non cp1252, che regge tutti e quattro — l'em dash e il
+    # simbolo dell'euro non sono codificabili, e la demo morirebbe con
+    # UnicodeEncodeError invece di stampare. Stesso esito con una codifica ASCII, che
+    # è ciò che Python sceglie quando la locale non dice niente di meglio.
+    # I file su disco restano UTF-8 e completi: qui si degrada solo il video.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
 

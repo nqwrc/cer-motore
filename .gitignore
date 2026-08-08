@@ -1,3 +1,9 @@
+# Istruzioni per gli agenti di codice: restano locali. Contengono il contesto
+# strategico del progetto, che non ha ragione di stare in un repo pubblico.
+# Le regole tecniche vincolanti che servono a chi contribuisce sono in CONTRIBUTING.md,
+# i punti normativi aperti in docs/FORMULE.md.
+CLAUDE.md
+
 __pycache__/
 *.pyc
 *.egg-info/
