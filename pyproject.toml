@@ -8,7 +8,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cer-motore"
-version = "0.0.1"
+# La versione ha una fonte sola, `cer_motore.__version__`: tenerne una copia anche qui
+# significa che prima o poi le due divergono. Vedi il commento in src/cer_motore/__init__.py
+# per il perché il progetto sta ancora su 0.0.x.
+dynamic = ["version"]
 description = "Motore di calcolo aperto per le comunità energetiche rinnovabili italiane (CER): energia condivisa, incentivi CACER, ripartizione e rendiconti per membro."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +46,9 @@ Issues = "https://github.com/nqwrc/cer-motore/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+
+[tool.setuptools.dynamic]
+version = { attr = "cer_motore.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

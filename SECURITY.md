@@ -105,14 +105,14 @@ motore open source non è un segreto da custodire finché non c'è una patch, è
 chiunque lo stia usando ha bisogno di leggere **subito**, perché nel frattempo sta producendo
 rendiconti.
 
-Se ritieni davvero che una segnalazione non debba essere pubblica: **oggi su questo
-repository non c'è un canale privato attivo** — la segnalazione privata di GitHub non è
-abilitata, quindi il pulsante *Report a vulnerability* nella scheda *Security* non compare.
-Apri una issue che dica soltanto che hai qualcosa da segnalare in privato, senza i dettagli,
-e concordiamo un canale. Meglio dirlo che rimandarti a un pulsante che non c'è.
+Se ritieni davvero che una segnalazione non debba essere pubblica — per esempio perché sai
+che una CER sta già ripartendo denaro con la formula sbagliata e vuoi darle il tempo di
+fermarsi — usa la **segnalazione privata di GitHub**: scheda *Security* del repository,
+pulsante *Report a vulnerability*. È attiva.
 
 Non c'è comunque alcun obbligo di riservatezza a senso unico: se preferisci pubblicare la tua
-analisi per conto tuo, fallo pure.
+analisi per conto tuo, fallo pure. E se il canale privato non funzionasse, apri una issue che
+dica soltanto che hai qualcosa da segnalare, senza i dettagli.
 
 ### Cosa deve contenere la segnalazione
 

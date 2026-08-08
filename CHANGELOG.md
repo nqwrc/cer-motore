@@ -13,6 +13,15 @@ Il progetto è in fase di **spike pre-v0.1**: non esiste ancora alcuna release p
 quindi tutto il lavoro svolto finora sta sotto `[Non rilasciato]`. Lo stato dei punti aperti
 e il piano verso la v0.1 stanno in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
+**Sulla versione `0.0.1`.** È un marcatore di spike, non una release: non esiste alcun tag
+git e nulla è mai stato pubblicato su PyPI. Vive in un posto solo,
+`cer_motore.__version__`, da cui `pyproject.toml` la legge (`dynamic = ["version"]`); un
+test lo verifica, perché due numeri di versione in due file divergono al primo aggiornamento
+dimenticato. Il passaggio a **0.1.0** è legato a una cosa precisa, non al tempo che passa:
+l'esistenza di un adapter per un export GSE vero (voce 9 della roadmap), cioè il momento in
+cui il motore smette di lavorare solo su dati mock. Fino ad allora ogni documento del
+progetto dice la stessa cosa — *spike, non usare per riparti reali* — e la versione con essi.
+
 ## [Non rilasciato]
 
 Il repository è stato pubblicato su <https://github.com/nqwrc/cer-motore> l'8 agosto 2026,
