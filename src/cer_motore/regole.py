@@ -55,6 +55,10 @@ from decimal import Decimal, InvalidOperation
 from os import PathLike
 from pathlib import Path
 
+# Un solo formattatore di elenchi per tutto il motore: `comune` non importa nulla dal
+# pacchetto, quindi si puo' prendere qui in cima senza rischio di cicli.
+from .comune import elenco
+
 __all__ = [
     "ErroreRegole",
     "valida",
@@ -258,7 +262,7 @@ def _valida_criteri(criteri: Mapping[str, object]) -> dict:
             raise ErroreRegole(
                 f"sezione [criteri]: manca {ruolo}. Va detto esplicitamente con quale "
                 f"criterio si ripartisce dentro il blocco; quelli supportati sono: "
-                f"{_elenco(ammessi[ruolo])}."
+                f"{elenco(ammessi[ruolo])}."
             )
         valore = criteri[ruolo]
         if not isinstance(valore, str):
@@ -271,7 +275,7 @@ def _valida_criteri(criteri: Mapping[str, object]) -> dict:
             raise ErroreRegole(
                 f"criteri.{ruolo}: {valore!r} non è un criterio supportato"
                 f"{_suggerimento(valore, ammessi[ruolo])}. Per i {ruolo} il motore "
-                f"conosce: {_elenco(ammessi[ruolo])}."
+                f"conosce: {elenco(ammessi[ruolo])}."
             )
         scelti[ruolo] = valore
     return {
@@ -425,7 +429,7 @@ def _chiavi_ammesse(
         # perché `leggi` antepone già il nome del file.
         messaggio = (
             f"{dove + ': ' if dove else ''}{cosa} sconosciuta {chiave!r}"
-            f"{_suggerimento(chiave, ammesse)}. Ammesse: {_elenco(ammesse)}."
+            f"{_suggerimento(chiave, ammesse)}. Ammesse: {elenco(ammesse)}."
         )
         if con_esempio:
             messaggio += "\n" + _ESEMPIO_IN_ERRORE
@@ -438,10 +442,6 @@ def _suggerimento(chiave: object, ammesse: tuple[str, ...]) -> str:
         return ""
     vicine = difflib.get_close_matches(chiave, ammesse, n=1, cutoff=0.6)
     return f"; forse intendevi {vicine[0]!r}" if vicine else ""
-
-
-def _elenco(voci: tuple[str, ...]) -> str:
-    return ", ".join(voci)
 
 
 def _it(valore: Decimal) -> str:

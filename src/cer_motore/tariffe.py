@@ -11,6 +11,10 @@ che è sfasato di 1.
 """
 from decimal import Decimal
 
+# Il contesto decimale del motore sta in comune.py, che non importa nulla dal
+# pacchetto: questo modulo e' il piu' in basso di tutti e non puo' dipendere da altri.
+from .comune import nel_contesto_del_motore
+
 # --- Parametri normativi (€/MWh salvo indicazione) --------------------------------
 
 # Valore base della tariffa (TP_base nella norma) e valore soglia della tariffa (CAP),
@@ -88,6 +92,7 @@ def parte_variabile(prezzo_zonale: Decimal) -> Decimal:
     return max(Decimal(0), VAR_RIF - prezzo_zonale)
 
 
+@nel_contesto_del_motore
 def tip_unitaria(
     potenza_kw: Decimal,
     prezzo_zonale: Decimal,
@@ -123,11 +128,30 @@ def tip_unitaria(
             f"fattore conto capitale {fattore_conto_capitale} fuori dall'intervallo "
             f"0–{FATTORE_CONTO_CAPITALE_MAX} (Regole Operative pag. 41)"
         )
+    return _tip_unitaria(potenza_kw, prezzo_zonale, zona, fotovoltaico,
+                        fattore_conto_capitale)
+
+
+def _tip_unitaria(
+    potenza_kw: Decimal,
+    prezzo_zonale: Decimal,
+    zona: str,
+    fotovoltaico: bool,
+    fattore_conto_capitale: Decimal,
+) -> Decimal:
+    """Nucleo di `tip_unitaria`, senza gestione del contesto decimale.
+
+    `incentivo_periodo` la chiama una volta per ora — 720 volte per impianto in un mese
+    — ed e' gia' dentro al contesto del motore: entrare e uscire da un contesto
+    identico a ogni ora sarebbe lavoro sprecato. Le guardie restano nell'involucro
+    pubblico, che e' l'unico punto da cui arriva un chiamante esterno.
+    """
     base = min(parte_fissa(potenza_kw) + parte_variabile(prezzo_zonale), cap_tariffa(potenza_kw))
     correttivo = CORRETTIVO_FV[zona] if fotovoltaico else Decimal(0)
     return (base + correttivo) * (Decimal(1) - fattore_conto_capitale)
 
 
+@nel_contesto_del_motore
 def incentivo_periodo(
     ec_kwh: list[Decimal],
     prezzi_zonali: list[Decimal],
@@ -159,7 +183,7 @@ def incentivo_periodo(
         raise ValueError("serie EC e prezzi zonali non allineate")
     mwh = Decimal(1000)
     tip = sum(
-        (ec * tip_unitaria(potenza_kw, pz, zona, fotovoltaico, fattore_conto_capitale) / mwh
+        (ec * _tip_unitaria(potenza_kw, pz, zona, fotovoltaico, fattore_conto_capitale) / mwh
          for ec, pz in zip(ec_kwh, prezzi_zonali)),
         Decimal(0),
     )

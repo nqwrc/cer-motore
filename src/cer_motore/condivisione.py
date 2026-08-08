@@ -7,7 +7,8 @@ configurazione sottesi alla stessa cabina primaria. Vedi docs/FORMULE.md §1.
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Mapping, Sequence
 
-from .ripartizione import ripartisci_centesimi
+from .comune import nel_contesto_del_motore
+from .ripartizione import riparto_per_pesi
 
 Serie = Sequence[Decimal]  # kWh per ora, un elemento per ora del periodo
 
@@ -24,6 +25,7 @@ def _lunghezza(serie: Mapping[str, Serie]) -> int:
     return lunghezze.pop() if lunghezze else 0
 
 
+@nel_contesto_del_motore
 def energia_condivisa(
     immissioni: Mapping[str, Serie],
     prelievi: Mapping[str, Serie],
@@ -45,6 +47,7 @@ def energia_condivisa(
     return out
 
 
+@nel_contesto_del_motore
 def contributo_prelievo_coincidente(
     prelievi: Mapping[str, Serie],
     ec: Serie,
@@ -72,6 +75,7 @@ def contributo_prelievo_coincidente(
             for pod, serie in alloca_oraria(prelievi, ec, decimali).items()}
 
 
+@nel_contesto_del_motore
 def alloca_oraria(
     immissioni: Mapping[str, Serie],
     ec: Serie,
@@ -121,7 +125,9 @@ def alloca_oraria(
             for pod in quote:
                 quote[pod].append(Decimal(0))
             continue
-        riparto = ripartisci_centesimi(ec_unita, pesi)  # unità = 1e-6 kWh, non centesimi
+        # `riparto_per_pesi` e non `ripartisci_centesimi`: siamo gia' dentro il
+        # contesto del motore, e questa riga gira una volta per ora.
+        riparto = riparto_per_pesi(ec_unita, pesi)  # unità = 1e-6 kWh, non centesimi
         for pod, u in riparto.items():
             quote[pod].append(Decimal(u) * passo)
     return quote

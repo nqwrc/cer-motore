@@ -168,7 +168,10 @@ def test_lo_scenario_paese_ha_un_prosumer_che_non_e_unimpresa():
     assert membri["M01-market"] == {"ruolo": "prosumer", "impresa": True}
     idonei = [m for m, d in membri.items()
               if d["ruolo"] in ("consumatore", "prosumer") and not d["impresa"]]
-    assert idonei == ["M02-comune", "M06", "M07", "M08"]
+    # `sorted`: quali soci sono idonei e' la proprieta' che conta; l'ordine viene
+    # dall'inserimento nelle tuple dello scenario e riordinarle non cambia nulla di
+    # cio' che questo caso verifica.
+    assert sorted(idonei) == ["M02-comune", "M06", "M07", "M08"]
 
 
 def test_lo_scenario_concentrata_ha_un_prosumer_e_consumatori_non_imprese():
@@ -182,7 +185,7 @@ def test_lo_scenario_concentrata_ha_un_prosumer_e_consumatori_non_imprese():
     assert membri["M01-officina"]["ruolo"] == "prosumer"
     idonei = [m for m, d in membri.items()
               if d["ruolo"] in ("consumatore", "prosumer") and not d["impresa"]]
-    assert idonei == ["M03-palestra", "M04", "M05"]
+    assert sorted(idonei) == ["M03-palestra", "M04", "M05"]
 
 
 def test_uno_scenario_incoerente_e_rifiutato_alla_costruzione():

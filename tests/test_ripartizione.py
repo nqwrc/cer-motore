@@ -5,6 +5,8 @@ import pytest
 
 from cer_motore.ripartizione import (
     CRITERI_CONSUMATORI,
+    FONDO_ECCEDENTARIO,
+    riparto_per_pesi,
     CRITERI_PRODUTTORI,
     RUOLI,
     CONTESTO,
@@ -1098,3 +1100,62 @@ def test_ripartisci_accetta_tutti_i_criteri_del_vocabolario():
                 10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI,
             )
             assert sum(v for d in esito.values() for v in d.values()) == 10000
+
+
+# --- pesi dei membri: stessa severita' delle percentuali (regressione 9/8/2026) -----
+
+
+def test_ripartisci_rifiuta_un_peso_che_non_e_decimal():
+    # Il diff dell'8/8 aveva aggiunto la validazione di TIPO alle percentuali statutarie
+    # ma non ai pesi dei membri, che arrivano dallo stesso posto: un adapter. La guardia
+    # sulla finitezza era condizionata a `isinstance(peso, Decimal)`, quindi un float la
+    # saltava del tutto, e `peso < 0` e' False sia per nan sia per un float positivo.
+    # Misurato allora, per tutti e tre i valori qui sotto:
+    #   TypeError: unsupported operand type(s) for *: 'decimal.Decimal' and 'float'
+    # sollevato dalle viscere del riparto, senza nominare ne' il membro ne' il blocco, e
+    # soprattutto NON un ValueError, che e' il tipo su cui il modulo insegna a contare.
+    for peso in (float("nan"), float("inf"), 0.5):
+        with pytest.raises(ValueError, match="blocco produttori"):
+            ripartisci(REGOLE, 10000, 0, {"P1": peso},
+                       {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_ripartisci_accetta_pesi_interi():
+    # La guardia non deve essere piu' stretta del necessario: un intero e' esatto e
+    # convertibile in Decimal senza perdita, ed e' come si scrive un'energia tonda.
+    esito = ripartisci(REGOLE, 10000, 0, {"P1": 500}, {"C1": 200, "C2": 100}, MEMBRI)
+    assert sum(v for d in esito.values() for v in d.values()) == 10000
+
+
+def test_il_fondo_riservato_e_segnalato_prima_del_valore_malformato():
+    # Ordine delle guardie. Con la conversione dei valori per prima, un fondo
+    # `finalita_sociali = 0.1` riceveva l'errore sul float: chi correggeva le virgolette
+    # scopriva solo al secondo tentativo che il nome andava cambiato, cioe' la
+    # correzione che gli serviva davvero.
+    regole = dict(REGOLE, fondi={FONDO_ECCEDENTARIO: 0.1})
+    with pytest.raises(ValueError, match="nome riservato"):
+        ripartisci(regole, 10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_gli_invarianti_sul_denaro_sopravvivono_a_python_meno_O():
+    # Gli invarianti di somma erano difesi da `assert`, che l'interprete elimina con
+    # `python -O` — una configurazione di esercizio del tutto ordinaria. Sotto -O un
+    # riparto che non chiude sarebbe stato restituito in silenzio a chi paga i soci.
+    #
+    # Questo caso verifica una proprieta' del SORGENTE, non un comportamento: provocare
+    # una violazione reale richiederebbe di sabotare il metodo del resto maggiore, e un
+    # test che sabota il codice che testa non dimostra nulla sul codice vero. Cio' che
+    # conta e' che il controllo sia scritto come `raise`, perche' e' la sola forma che
+    # -O non tocca.
+    import inspect
+
+    for funzione in (riparto_per_pesi, ripartisci):
+        sorgente = inspect.getsource(inspect.unwrap(funzione))
+        assert "raise AssertionError" in sorgente, funzione.__name__
+        istruzioni_assert = [
+            riga for riga in sorgente.splitlines() if riga.lstrip().startswith("assert ")
+        ]
+        assert not istruzioni_assert, (
+            f"{funzione.__name__} difende un invariante con `assert`, che sparisce "
+            f"con -O: {istruzioni_assert}"
+        )

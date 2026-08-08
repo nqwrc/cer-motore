@@ -25,6 +25,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from . import mock, regole as mod_regole
+from .comune import in_euro
 from .condivisione import alloca_oraria, contributo_prelievo_coincidente, energia_condivisa
 from .mock import Scenario
 from .rendiconto import rendiconto_markdown
@@ -156,7 +157,7 @@ def confronto(
             # hanno impianti di taglia diversa: la percentuale sul TIP sì, ed è la
             # grandezza che il vincolo determina davvero (Regole Operative pag. 42).
             quota = Decimal(ecc) / totale["tip_cent"] * 100
-            stato = f"scatta: {_euro(ecc)}, il {quota:.1f}% del TIP"
+            stato = f"scatta: {in_euro(ecc)}, il {quota:.1f}% del TIP"
         else:
             stato = "non scatta"
         righe.append(
@@ -179,10 +180,6 @@ def confronto(
     return "\n".join(righe)
 
 
-def _euro(cent: int) -> str:
-    return f"{Decimal(cent) / 100:.2f} €"
-
-
 def main() -> None:
     # Il rendiconto stampa quattro caratteri fuori dall'ASCII: "·" (U+00B7), "è",
     # "—" (U+2014) e "€" (U+20AC). Su una console Windows con code page 850 o 437 —
@@ -195,6 +192,7 @@ def main() -> None:
         sys.stdout.reconfigure(errors="replace")
 
     dati = Path.cwd() / "data"
+    per_esteso = mock.CONCENTRATA  # quello con i numeri più grandi: vedi il docstring
     risultati: list[tuple[Scenario, dict, dict]] = []
     rendiconti: dict[str, str] = {}
     # `SCENARI` è già in ordine di rapporto EC/EI crescente (mock.py): la tabella di
@@ -208,9 +206,12 @@ def main() -> None:
         rendiconti[scenario.nome] = testo
 
     # Un solo rendiconto a video, e i tre file su disco: vedi il docstring del modulo.
-    print(confronto(risultati, mock.CONCENTRATA))
+    # Un nome solo per lo scenario da stampare per esteso: cablarlo in due punti
+    # significa che prima o poi la frase di chiusura annuncia uno scenario e la demo ne
+    # stampa un altro, e che togliere quello scenario da SCENARI da' un KeyError.
+    print(confronto(risultati, per_esteso))
     print()
-    print(rendiconti[mock.CONCENTRATA.nome])
+    print(rendiconti[per_esteso.nome])
 
 
 if __name__ == "__main__":

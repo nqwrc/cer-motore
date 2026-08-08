@@ -229,7 +229,7 @@ PAESE = Scenario(
     zona_mercato="NORD",
     zona_tariffa="nord",
     impianti=(
-        # 90 kW su due tetti, contro ~390 kWh/giorno di consumi: la CER produce nel mese
+        # 90 kW su due tetti, contro ~366 kWh/giorno di consumi: la CER produce nel mese
         # poco più di quanto consuma (13.339 kWh contro 10.970), che è il dimensionamento
         # di una configurazione fatta bene. Non è una taglia scelta per centrare un
         # numero: è quella che serve a coprire i consumi diurni di un supermercato e di

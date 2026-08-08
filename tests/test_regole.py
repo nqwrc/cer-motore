@@ -216,7 +216,7 @@ def test_errore_sezione_sconosciuta_con_suggerimento():
     testo = messaggio(BASE + '\n[fondo]\ngestione = "0.10"\n')
     assert "sezione sconosciuta 'fondo'" in testo
     assert "forse intendevi 'fondi'" in testo
-    assert "Ammesse: quote, criteri, fondi" in testo
+    assert "Ammesse: 'quote', 'criteri' o 'fondi'" in testo
 
 
 def test_errore_chiavi_del_dict_python_al_primo_livello():
@@ -269,7 +269,7 @@ def test_errore_chiave_mancante_in_criteri():
         '[criteri]\nproduttori = "energia_immessa"\n'
     )
     assert "sezione [criteri]: manca consumatori" in testo
-    assert "prelievo_coincidente, quote_uguali" in testo  # elenca i supportati
+    assert "'prelievo_coincidente' o 'quote_uguali'" in testo  # elenca i supportati
 
 
 def test_errore_sezione_che_non_e_una_tabella():
@@ -403,7 +403,7 @@ def test_errore_criterio_non_supportato():
     )
     assert "criteri.produttori: 'energia_immesse' non è un criterio supportato" in testo
     assert "forse intendevi 'energia_immessa'" in testo
-    assert "energia_immessa, quote_uguali" in testo
+    assert "'energia_immessa' o 'quote_uguali'" in testo
 
 
 def test_errore_criterio_valido_ma_per_l_altro_blocco():
@@ -415,7 +415,7 @@ def test_errore_criterio_valido_ma_per_l_altro_blocco():
         'consumatori = "energia_immessa"\n'
     )
     assert "criteri.consumatori: 'energia_immessa' non è un criterio supportato" in testo
-    assert "prelievo_coincidente, quote_uguali" in testo
+    assert "'prelievo_coincidente' o 'quote_uguali'" in testo
 
 
 def test_errore_criterio_non_e_un_testo():

@@ -1,11 +1,8 @@
 """Rendiconto per membro: dal risultato della ripartizione a un testo leggibile."""
 from decimal import Decimal
 
+from .comune import in_euro
 from .ripartizione import FONDO_ECCEDENTARIO, VOCE_FONDI, in_centesimi
-
-
-def _euro(cent: int) -> str:
-    return f"{Decimal(cent) / 100:.2f} €"
 
 
 def _perc(frazione: Decimal) -> str:
@@ -78,8 +75,8 @@ def rendiconto_markdown(
         f"# Rendiconto CER — {periodo}",
         "",
         f"Energia condivisa: **{incentivo['ec_tot_kwh']:.0f} kWh** · "
-        f"TIP: **{_euro(tip_cent)}** · valorizzazione ARERA: **{_euro(arera_cent)}** · "
-        f"totale: **{_euro(totale_cent)}**",
+        f"TIP: **{in_euro(tip_cent)}** · valorizzazione ARERA: **{in_euro(arera_cent)}** · "
+        f"totale: **{in_euro(totale_cent)}**",
     ]
 
     immesse = incentivo.get("immissioni_tot_kwh")
@@ -107,11 +104,11 @@ def rendiconto_markdown(
             continue
         qp, qc, qe = voci.get("quota_produttore", 0), voci.get("quota_consumatore", 0), voci.get("quota_eccedentaria", 0)
         righe.append(
-            f"| {m} | {membri[m]['ruolo']} | {_euro(qp)} | {_euro(qc)} | {_euro(qe)} | {_euro(qp + qc + qe)} |"
+            f"| {m} | {membri[m]['ruolo']} | {in_euro(qp)} | {in_euro(qc)} | {in_euro(qe)} | {in_euro(qp + qc + qe)} |"
         )
     if esito.get(VOCE_FONDI):
         righe += ["", "**Fondi statutari:** " + " · ".join(
-            f"{nome}: {_euro(cent)}" for nome, cent in esito[VOCE_FONDI].items())]
+            f"{nome}: {in_euro(cent)}" for nome, cent in esito[VOCE_FONDI].items())]
 
     # `FONDO_ECCEDENTARIO` è un nome riservato (`ripartizione.ripartisci` rifiuta un
     # fondo statutario omonimo), quindi quello che si legge qui è tutto e solo importo
