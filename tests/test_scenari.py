@@ -1,10 +1,11 @@
-"""Scenari mock e coerenza del rendiconto (roadmap 5 e 12).
+"""Scenari mock e coerenza del rendiconto (roadmap 5, 11 e 12).
 
 Due gruppi di casi:
 
-- gli SCENARI mock: formato dei file, determinismo, e il fatto che i due scenari stiano
-  ai lati opposti della soglia del vincolo eccedentario, così che la demo eserciti anche
-  il ramo eccedentario del motore invece di lasciarlo a zero per sempre;
+- gli SCENARI mock: formato dei file, determinismo, e il fatto che i tre scenari coprano
+  i tre regimi del vincolo eccedentario — sotto soglia, appena sopra, molto sopra — così
+  che la demo eserciti anche il ramo eccedentario del motore invece di lasciarlo a zero
+  per sempre, e lo eserciti anche dove sbagliarlo costa di più;
 - gli ARROTONDAMENTI del rendiconto: l'intestazione e la tabella devono chiudere sullo
   stesso numero anche quando i due modi di portare gli euro in centesimi divergono.
 
@@ -12,6 +13,7 @@ Come negli altri file, ogni caso non banale è risolto a mano nel commento.
 Fonti delle formule in docs/FORMULE.md.
 """
 from dataclasses import replace
+from decimal import ROUND_HALF_UP
 from decimal import Decimal as D
 from pathlib import Path
 
@@ -49,7 +51,7 @@ def test_il_formato_dei_file_non_dipende_dallo_scenario(tmp_path):
     # docs/MOCK-GSE.md fissa il formato: separatore ";", intestazioni note, una riga per
     # (timestamp, POD), kWh a 3 decimali. Uno scenario nuovo può cambiare quanti POD ci
     # sono, non come sono scritti: un adapter futuro deve poter leggere entrambi.
-    for scenario in (mock.EQUILIBRATA, mock.CONCENTRATA):
+    for scenario in mock.SCENARI.values():
         f_mis, f_pz = mock.genera(tmp_path / scenario.nome, scenario=scenario)
         righe_mis = f_mis.read_text(encoding="utf-8").splitlines()
         righe_pz = f_pz.read_text(encoding="utf-8").splitlines()
@@ -58,6 +60,7 @@ def test_il_formato_dei_file_non_dipende_dallo_scenario(tmp_path):
 
         # Righe attese: intestazione + un'ora per ogni POD, di produzione o di prelievo.
         #   equilibrata: 1 + 720 * (2 impianti + 8 utenze) = 7201
+        #   paese:       1 + 720 * (2 impianti + 8 utenze) = 7201
         #   concentrata: 1 + 720 * (1 impianto  + 5 utenze) = 4321
         n_pod = len(scenario.impianti) + len(scenario.utenze)
         assert len(righe_mis) == 1 + ORE_GIUGNO * n_pod
@@ -73,7 +76,7 @@ def test_la_generazione_e_deterministica(tmp_path):
     # Seed fisso per scenario: due generazioni successive devono dare file identici byte
     # per byte, altrimenti confrontare l'output della demo prima e dopo un refactor —
     # che è il test di non-regressione gratuito raccomandato in CLAUDE.md — non funziona.
-    for scenario in (mock.EQUILIBRATA, mock.CONCENTRATA):
+    for scenario in mock.SCENARI.values():
         a = mock.genera(tmp_path / f"a-{scenario.nome}", scenario=scenario)
         b = mock.genera(tmp_path / f"b-{scenario.nome}", scenario=scenario)
         for fa, fb in zip(a, b):
@@ -89,7 +92,7 @@ def test_lo_scenario_equilibrata_non_e_cambiato(tmp_path):
     assert rapporto < SOGLIA_ECCEDENTARIO_SOLA_TARIFFA  # 0,2718 contro 0,55
 
 
-def test_i_due_scenari_stanno_ai_lati_opposti_della_soglia(tmp_path):
+def test_gli_scenari_estremi_stanno_ai_lati_opposti_della_soglia(tmp_path):
     # Il punto di tutto l'esercizio (roadmap 5). Il rapporto EC/EI è il solo parametro
     # che decide se il vincolo dell'importo eccedentario scatta (docs/FORMULE.md §4), e
     # dipende dalla composizione fisica della configurazione:
@@ -104,11 +107,68 @@ def test_i_due_scenari_stanno_ai_lati_opposti_della_soglia(tmp_path):
     # 97,6% non è un consumo assurdo, è un impianto sottodimensionato: 4474 kWh immessi
     # a fronte di 11229 kWh prelevati nel mese. È esattamente la configurazione che il
     # vincolo eccedentario intende intercettare.
+    # Fra i due sta `paese`, che presidia la fascia critica: vedi il test successivo.
     _, _, eq = _totali(mock.EQUILIBRATA, tmp_path / "eq")
     immesse, ec, co = _totali(mock.CONCENTRATA, tmp_path / "co")
     assert eq < SOGLIA_ECCEDENTARIO_SOLA_TARIFFA < co
     assert (immesse, ec) == (D("4473.698"), D("4367.190"))
     assert round(co, 4) == D("0.9762")
+
+
+# Fascia critica: dove il rapporto EC/EI deve stare perché lo scenario `paese` faccia il
+# lavoro per cui esiste. L'estremo inferiore è la soglia normativa stessa (55%, sola
+# tariffa premio): sotto di essa il vincolo non scatta e lo scenario non prova nulla.
+# L'estremo superiore, 70%, non è normativo: è il punto oltre il quale l'errore corretto
+# il 7/8/2026 diventava piccolo abbastanza da poter passare inosservato in un rendiconto.
+FASCIA_CRITICA = (SOGLIA_ECCEDENTARIO_SOLA_TARIFFA, D("0.70"))
+MESI_2026 = range(1, 13)
+
+
+def test_lo_scenario_paese_resta_nella_fascia_critica_in_ogni_mese(tmp_path):
+    # LA PROPRIETÀ CHE CONTA È STRUTTURALE, NON FORTUNATA (roadmap 11). Uno scenario che
+    # cade nella fascia solo a giugno col seed 42 sarebbe una fixture che si rompe alla
+    # prima volta che qualcuno cambia mese: qui il rapporto è verificato su tutti e
+    # dodici i mesi del 2026, che nel generatore differiscono per numero di giorni,
+    # allineamento dei fine settimana (i profili sono scalati nei giorni non feriali) e
+    # sequenza di numeri pseudo-casuali.
+    #
+    # Il margine è ampio da entrambi i lati, e non per caso: i 90 kW installati coprono
+    # i consumi diurni della configurazione senza sovradimensionare, e la forma delle
+    # curve — campana solare contro profili di supermercato, palestra, uffici e case —
+    # non dipende dal mese in questo generatore. Misurato: min 0,5959 (maggio), max
+    # 0,6063 (giugno), cioè un'escursione di un punto percentuale su dodici mesi, contro
+    # i 5 punti di margine verso la soglia e i 9 verso l'estremo alto della fascia.
+    rapporti = {}
+    for mese in MESI_2026:
+        f_mis, f_pz = mock.genera(tmp_path / f"m{mese:02d}", mese=mese, scenario=mock.PAESE)
+        immissioni, prelievi, _prezzi = mock.carica(f_mis, f_pz)
+        ec = sum(energia_condivisa(immissioni, prelievi), D(0))
+        immesse = sum((sum(s, D(0)) for s in immissioni.values()), D(0))
+        rapporti[mese] = ec / immesse
+
+    basso, alto = FASCIA_CRITICA
+    fuori = {m: round(r, 4) for m, r in rapporti.items() if not basso < r < alto}
+    assert not fuori, f"rapporto EC/EI fuori dalla fascia critica nei mesi: {fuori}"
+    assert round(min(rapporti.values()), 4) == D("0.5959")
+    assert round(max(rapporti.values()), 4) == D("0.6063")
+    # E giugno, il mese della demo, è il massimo: i valori inchiodati dal caso a mano
+    # qui sotto sono quindi anche il caso peggiore dei dodici.
+    assert rapporti[6] == max(rapporti.values())
+
+
+def test_lo_scenario_paese_ha_un_prosumer_che_non_e_unimpresa():
+    # Combinazione che né `equilibrata` né `concentrata` esercitano: il comune possiede
+    # l'impianto sulla palestra ED è utente della palestra, quindi è un prosumer, ma non
+    # è un'impresa. Prende perciò sia la quota da produttore sia una fetta dell'importo
+    # eccedentario, che spetta ai soli consumatori diversi dalle imprese (Regole
+    # Operative pag. 41). In `concentrata` il prosumer è l'officina, cioè un'impresa, e
+    # questa strada restava non percorsa.
+    membri = mock.PAESE.membri()
+    assert membri["M02-comune"] == {"ruolo": "prosumer", "impresa": False}
+    assert membri["M01-market"] == {"ruolo": "prosumer", "impresa": True}
+    idonei = [m for m, d in membri.items()
+              if d["ruolo"] in ("consumatore", "prosumer") and not d["impresa"]]
+    assert idonei == ["M02-comune", "M06", "M07", "M08"]
 
 
 def test_lo_scenario_concentrata_ha_un_prosumer_e_consumatori_non_imprese():
@@ -179,27 +239,109 @@ def test_end_to_end_lo_scenario_concentrata_fa_scattare_leccedentario(tmp_path):
     assert sum(v for voci in esito.values() for v in voci.values()) == 60306
 
 
-def test_la_demo_produce_entrambi_i_rendiconti(tmp_path, monkeypatch, capsys):
+def test_end_to_end_lo_scenario_paese_fa_scattare_un_eccedentario_che_morde_poco(tmp_path):
+    # IL CASO A MANO NELLA FASCIA CRITICA (roadmap 11), dalla misura oraria al centesimo
+    # ripartito. Stessa formula del caso "concentrata" qui sopra, Regole Operative
+    # pag. 42, ma a un rapporto vicino alla soglia:
+    #
+    #   % E_ACI,ecc = max[0; (E_ACI / E_immessa * 100)% − valore soglia]
+    #   C_ACI,ecc   = % E_ACI,ecc * C_ACI
+    #
+    # Numeri del periodo (giugno 2026, seed 42):
+    #   E_ACI      = 8086,838 kWh      E_immessa = 13338,844 kWh
+    #   rapporto   = 8086,838 / 13338,844 = 0,6062622817989325011972551744
+    #   soglia     = 0,55 (sola tariffa premio, nessun contributo in conto capitale)
+    #   scarto     = 0,6062622817989… − 0,55 = 0,0562622817989325011972551744
+    #   C_ACI      = 1050,18166322 € → 105018 centesimi (ROUND_HALF_UP)
+    #   C_ACI,ecc  = 105018 * 0,0562622817989… = 5908,5523099… → 5909 cent = 59,09 €
+    #   base TIP   = 105018 − 5909 = 99109 centesimi
+    #
+    # La valorizzazione ARERA si rifà a mano per intero da docs/FORMULE.md §3, 8,22 €
+    # per MWh condiviso, e non concorre al vincolo:
+    #   8,086838 MWh * 8,22 = 66,47380836 € → 6647 centesimi, tutti in quota base.
+    totale, esito = elabora(mock.PAESE, tmp_path)
+    assert (totale["ec_tot_kwh"], totale["immissioni_tot_kwh"]) == (D("8086.838"), D("13338.844"))
+    assert in_centesimi(totale["tip"]) == 105018
+    assert totale["arera"] == D("8086.838") / 1000 * D("8.22") == D("66.47380836")
+    assert in_centesimi(totale["arera"]) == 6647
+    assert totale["eccedentario_cent"] == 5909
+
+    # MORDE POCO, ed è questo il punto della fixture: 5909 / 105018 = 5,63% della tariffa
+    # premio, contro il 42,62% dello scenario "concentrata" (24172 / 56716). Il vincolo
+    # scatta davvero — percorre lo stesso ramo di codice — ma sposta una fetta piccola,
+    # che è il regime in cui un errore di formula si nota meno e fa più danni relativi.
+    quota = D(totale["eccedentario_cent"]) / totale["tip_cent"] * 100
+    assert round(quota, 2) == D("5.63")
+
+    # PERCHÉ QUESTO SCENARIO ESISTE. La forma sbagliata usata fino al 7/8/2026 —
+    # (rapporto − soglia)/rapporto invece della differenza in punti percentuali — è
+    # esattamente la forma giusta divisa per il rapporto, quindi gonfia l'importo di un
+    # fattore 1/rapporto: +2,4% a 0,976 (dove sta "concentrata"), +65% qui, +79% a 0,56.
+    #   0,0562622817989… / 0,6062622817989… = 0,0928018837523392950371950074
+    #   105018 * 0,09280188375233929… = 9745,7… → 9746 cent = 97,46 €
+    # cioè 38,37 € in più tolti agli altri membri. Nessuno dei due scenari precedenti
+    # avrebbe reso visibile uno scarto del genere in un rendiconto.
+    rapporto = totale["ec_tot_kwh"] / totale["immissioni_tot_kwh"]
+    vecchia_formula = (rapporto - SOGLIA_ECCEDENTARIO_SOLA_TARIFFA) / rapporto
+    gonfiato = int((D(totale["tip_cent"]) * vecchia_formula).quantize(D(1), ROUND_HALF_UP))
+    assert gonfiato == 9746
+    # 9746 / 5909 = 1,6493, cioè 1/0,60626 a meno degli arrotondamenti al centesimo.
+    assert round(D(gonfiato) / totale["eccedentario_cent"], 3) == D("1.649")
+    assert gonfiato - totale["eccedentario_cent"] == 3837  # 38,37 € di troppo
+
+    # L'eccedentario va ai soli consumatori diversi dalle imprese, e per intero. Qui sono
+    # il comune (prosumer NON impresa: palestra) e le tre famiglie; supermercato, bar e i
+    # due uffici non ne prendono nulla. Il riparto è pro-quota del prelievo coincidente,
+    # e la palestra consuma di giorno molto più di tre case:
+    #   comune 45,10 € + 4,69 € + 4,67 € + 4,63 € = 59,09 €
+    quote_ecc = {m: v["quota_eccedentaria"] for m, v in esito.items()
+                 if m != "_fondi" and v.get("quota_eccedentaria")}
+    assert quote_ecc == {"M02-comune": 4510, "M06": 469, "M07": 467, "M08": 463}
+    assert sum(quote_ecc.values()) == 5909
+
+    # Invariante sacro: si distribuisce esattamente TIP + ARERA in centesimi,
+    # 105018 + 6647 = 111665, fondi statutari inclusi.
+    assert sum(v for voci in esito.values() for v in voci.values()) == 111665
+
+
+def test_la_demo_produce_tutti_i_rendiconti(tmp_path, monkeypatch, capsys):
     # La demo è il gate dichiarato della v0.1 ("un estraneo ottiene un risultato utile in
-    # meno di 15 minuti"): deve girare, scrivere i due rendiconti e mostrare a video il
-    # confronto più il rendiconto dello scenario in cui il vincolo scatta.
+    # meno di 15 minuti"): deve girare, scrivere i TRE rendiconti e mostrare a video il
+    # confronto più UN SOLO rendiconto per esteso — tre sarebbero un muro di testo.
     monkeypatch.chdir(tmp_path)
     from cer_motore.__main__ import main
 
     main()
     dati = tmp_path / "data"
-    equilibrata = (dati / "rendiconto-equilibrata.md").read_text(encoding="utf-8")
-    concentrata = (dati / "rendiconto-concentrata.md").read_text(encoding="utf-8")
-    assert "vincolo eccedentario **non attivo**" in equilibrata
-    assert "vincolo eccedentario **attivo**" in concentrata
-    assert "200.23 €" in concentrata  # la quota eccedentaria della palestra
+    scritti = {n: (dati / f"rendiconto-{n}.md").read_text(encoding="utf-8")
+               for n in mock.SCENARI}
+    assert "vincolo eccedentario **non attivo**" in scritti["equilibrata"]
+    assert "vincolo eccedentario **attivo**" in scritti["paese"]
+    assert "vincolo eccedentario **attivo**" in scritti["concentrata"]
+    assert "200.23 €" in scritti["concentrata"]  # la quota eccedentaria della palestra
+    assert "45.10 €" in scritti["paese"]         # quella del comune, nella fascia critica
     # Tutto l'output della demo sta sotto ./data/, che è già ignorata da git: lanciarla
     # non deve lasciare file generati in mezzo ai sorgenti.
     assert (dati / "concentrata" / "misure.csv").exists()
+    assert (dati / "paese" / "misure.csv").exists()
     assert list(tmp_path.iterdir()) == [dati]
 
+    # A video: la tabella con tutti e tre i regimi, e solo il rendiconto di concentrata.
     stampato = capsys.readouterr().out
-    assert "non scatta" in stampato and "scatta: 241.72 €" in stampato
+    assert "non scatta" in stampato
+    assert "scatta: 59.09 €, il 5.6% del TIP" in stampato
+    assert "scatta: 241.72 €, il 42.6% del TIP" in stampato
+    assert stampato.count("| Membro | Ruolo |") == 1
+    assert scritti["concentrata"] in stampato and scritti["paese"] not in stampato
+
+    # La tabella deve STARE in una console: il titolo per esteso di uno scenario è di
+    # 84 caratteri e da solo portava la riga a 200, cioè a capo su qualunque terminale.
+    # I titoli sono ora in un elenco sotto, dove avvolgersi non fa danno.
+    righe_tabella = [r for r in stampato.splitlines() if r.startswith("| `")]
+    assert len(righe_tabella) == 3
+    assert max(len(r) for r in righe_tabella) <= 100
+    for nome in ("equilibrata", "paese", "concentrata"):
+        assert f"- `{nome}` — " in stampato
 
 
 # --- coerenza degli arrotondamenti nel rendiconto (roadmap 12) ---------------------

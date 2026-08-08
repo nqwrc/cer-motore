@@ -32,18 +32,30 @@ nuvolosità pseudo-casuale; i consumi sono profili orari di forma perturbati con
 
 Il **formato dei file non dipende dallo scenario**: cambia solo quanti POD ci sono e come
 consumano. Uno `Scenario` è la descrizione della configurazione (impianti, utenze, anagrafica
-dei membri, zone) e i due previsti sono:
+dei membri, zone) e i tre previsti sono:
 
 | `nome` | Configurazione | EC/EI |
 |---|---|---:|
 | `equilibrata` | 2 impianti FV (60 e 20 kW), 8 utenze: 5 residenziali, 2 uffici, 1 bar | 0,27 |
+| `paese` | 2 impianti FV (50 kW sul supermercato, 40 kW sulla palestra comunale), 8 utenze: supermercato, palestra, bar, 2 uffici, 3 residenziali | 0,61 |
 | `concentrata` | 1 impianto FV da 30 kW, 5 utenze: officina, supermercato, palestra comunale, 2 residenziali | 0,98 |
 
-Servono entrambi perché il rapporto energia condivisa / energia immessa decide se scatta il
+Servono tutti e tre perché il rapporto energia condivisa / energia immessa decide se scatta il
 vincolo dell'importo eccedentario (`FORMULE.md` §4): con il solo scenario `equilibrata` quel
 ramo del motore non veniva mai percorso dalla demo. Nella `concentrata` l'impianto è
 sottodimensionato rispetto ai prelievi (4.474 kWh immessi contro 11.229 prelevati nel mese),
 quindi `EC_h = min(immesso, prelevato)` coincide quasi sempre con l'immesso.
+
+`paese` copre la **fascia critica 0,55–0,70**, dove il vincolo scatta ma prende poco (il 5,6%
+della tariffa premio, contro il 42,6% della `concentrata`). Serve perché è la fascia in cui un
+errore sulla formula del §4 pesa di più in percentuale e si nota di meno in valore assoluto:
+la forma sbagliata usata fino al 7 agosto 2026 gonfiava l'importo di un fattore `1/rapporto`,
+cioè +65% qui contro +2,4% nella `concentrata`. La configurazione è dimensionata, non
+azzeccata — 90 kW su due tetti contro ~390 kWh/giorno di consumi, cioè 13.339 kWh immessi
+contro 10.970 prelevati nel mese — e il rapporto resta fra 0,596 e 0,606 in **tutti e dodici
+i mesi** del 2026, non solo in quello generato dalla demo. Il comune, che possiede l'impianto
+sulla palestra ed è utente della palestra, è inoltre l'unico **prosumer non impresa** del
+mock: prende quota da produttore e quota eccedentaria insieme.
 
 L'anagrafica dei membri (chi possiede quale POD, chi è impresa) **non fa parte dell'export GSE**,
 che conosce i POD: sta nello `Scenario` solo perché deve restare in sincronia con la lista dei
@@ -59,5 +71,5 @@ POD. Un adapter reale la prenderà da un'altra fonte.
   elettrico scritta nel CSV dei prezzi, `nord` è l'area del correttivo geografico FC_zonale
   (Regole Operative Appendice B §2 pag. 160). Sono due partizioni diverse dell'Italia e
   coincidono solo perché questa CER è in Emilia-Romagna.
-- I profili di consumo sono **di forma, non campionari**: nessuno dei due scenari è la copia di
+- I profili di consumo sono **di forma, non campionari**: nessuno dei tre scenari è la copia di
   una CER esistente.

@@ -65,12 +65,17 @@ __all__ = [
     "SEZIONI",
 ]
 
-# Criteri di riparto supportati. NON sono parametri normativi (quelli stanno in
-# tariffe.py): sono il vocabolario del motore, cioè le funzioni-peso che
-# `ripartizione.ripartisci` sa applicare. Aggiungerne uno qui senza implementarlo là
-# significherebbe accettare un file che poi ripartisce in un altro modo, in silenzio.
-CRITERI_PRODUTTORI = ("energia_immessa", "quote_uguali")
-CRITERI_CONSUMATORI = ("prelievo_coincidente", "quote_uguali")
+# Criteri di riparto supportati e nomi riservati. NON sono parametri normativi (quelli
+# stanno in tariffe.py): sono il vocabolario del motore, cioè le funzioni-peso che
+# `ripartizione.ripartisci` sa applicare e le chiavi che si riserva nel risultato.
+# Si importano da lì invece di riscriverli: due elenchi che possono divergere sono un
+# elenco solo, scritto male. Accettare qui un criterio che il motore non implementa
+# significherebbe validare un file che poi ripartisce in un altro modo, in silenzio.
+from .ripartizione import (  # noqa: E402  (dopo il docstring, prima delle costanti)
+    CRITERI_CONSUMATORI,
+    CRITERI_PRODUTTORI,
+    FONDO_ECCEDENTARIO,
+)
 
 SEZIONI = ("quote", "criteri", "fondi")
 SEZIONI_OBBLIGATORIE = ("quote", "criteri")
@@ -290,6 +295,21 @@ def _valida_fondi(fondi: Mapping[str, object]) -> dict[str, Decimal]:
             raise ErroreRegole(
                 "sezione [fondi]: c'è un fondo senza nome. Ogni fondo si chiama in "
                 'qualche modo nel rendiconto, per esempio gestione = "0.10".'
+            )
+        if nome == FONDO_ECCEDENTARIO:
+            # È il conflitto che capiterà per primo, e capiterà proprio qui: nessun
+            # nome è più naturale, per uno statuto italiano, di "finalita_sociali"
+            # per il fondo delle finalità sociali. Il motore usa già quella voce per
+            # depositarci l'importo eccedentario quando non ci sono consumatori
+            # idonei (Regole Operative pag. 41), e i due si fonderebbero in una riga
+            # sola del rendiconto. Rifiutarlo QUI e non solo in `ripartisci` serve a
+            # dirlo mentre si ha il file dello statuto aperto davanti.
+            raise ErroreRegole(
+                f"fondi.{nome}: {nome!r} è un nome riservato. Il motore lo usa già "
+                "per depositarci l'importo eccedentario quando non ci sono "
+                "consumatori diversi dalle imprese cui destinarlo, e i due importi si "
+                "sommerebbero in una riga sola del rendiconto. Chiama il tuo fondo in "
+                'un altro modo, per esempio fondo_sociale = "0.05".'
             )
         percentuale = _decimale(valore, f"fondi.{nome}")
         if percentuale < 0:

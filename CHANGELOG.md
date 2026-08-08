@@ -60,7 +60,7 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
   end-to-end toccava.
 - Guardie della primitiva del vincolo eccedentario, in `ripartizione._valida_eccedentario`
   (*8 agosto 2026*). Vedi "Corretto".
-- Suite di test cresciuta a **136 test**, di cui una parte consistente sono casi risolti a
+- Suite di test cresciuta a **162 test**, di cui una parte consistente sono casi risolti a
   mano con il calcolo passo per passo nel commento (*obiettivo dichiarato: 20 prima della
   v0.1; superato il 7 agosto 2026*). Coperti prosumer, impianti misti FV / non FV, giorni da
   23 e 25 ore per il cambio dell'ora legale, periodi interamente senza immissioni,
@@ -73,9 +73,45 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
   e la licenza [MIT](LICENSE).
 - Integrazione continua con GitHub Actions (*8 agosto 2026*): la suite e la demo end-to-end
   su Linux e Windows, su Python 3.11, 3.12 e 3.13.
+- Terzo scenario mock `paese` (*8 agosto 2026*): una CER di paese con 90 kW di fotovoltaico
+  davanti a otto utenze, rapporto EC/EI **0,606**. Presidia la fascia 0,55-0,70, dove il
+  vincolo eccedentario scatta ma prende solo il 5,6% della tariffa premio — ed è il regime
+  in cui l'errore corretto il 7 agosto sbagliava di più *e passava più inosservato*: lì
+  avrebbe assegnato 97,46 € invece di 59,09 €, cioè **+65%**, su un importo abbastanza
+  piccolo da non insospettire nessuno. Verificato su tutti e dodici i mesi del 2026: il
+  rapporto resta fra 0,596 e 0,606, quindi la posizione nella fascia è strutturale e non
+  un caso del seed. Copre anche un prosumer che **non** è un'impresa, combinazione che gli
+  altri due scenari non esercitavano.
+- Nomi riservati `VOCE_FONDI` e `FONDO_ECCEDENTARIO`, e vocabolari chiusi per ruoli e
+  criteri di riparto (*8 agosto 2026*). Vedi "Corretto" per cosa succedeva senza.
 
 ### Corretto
 
+- **Un ruolo scritto male spostava denaro fra i soci, in silenzio** (*8 agosto 2026*).
+  Un membro con un ruolo non riconosciuto non entrava in nessuno dei due blocchi: restava
+  con un esito vuoto e la sua quota veniva ripartita fra gli altri. Misurato: con
+  `consumatori` al posto di `consumatore`, C2 riceveva `{}` e i suoi **1500 centesimi**
+  finivano a C1. L'invariante di somma reggeva — il denaro non spariva, cambiava tasca —
+  quindi nessuna guardia a valle se ne accorgeva. Stessa forma di difetto per i criteri di
+  riparto: `criterio_produttori = "pro_capite"` non veniva rifiutato, cadeva nel ramo di
+  default e ripartiva pro-quota energia, cioè dava una risposta plausibile a una domanda
+  che nessuno aveva posto. Ruoli e criteri sono ora vocabolari chiusi, validati prima di
+  qualunque conto.
+- **Nomi che collidevano con le voci riservate del riparto** (*8 agosto 2026*). Un membro
+  chiamato `_fondi` finiva dentro il dizionario dei fondi e compariva nel rendiconto come
+  una voce di fondo che nessuno statuto aveva deliberato, mentre la sua riga spariva dalla
+  tabella; un fondo statutario chiamato `finalita_sociali` si fondeva con l'importo
+  eccedentario in una riga sola. In entrambi i casi il totale tornava, ed è questo che
+  rendeva il difetto invisibile. Il fondo riservato è ora rifiutato anche da `regole.py`,
+  cioè mentre si ha aperto il file dello statuto: è lì che il conflitto capiterà, perché
+  nessun nome è più naturale, per uno statuto italiano, di `finalita_sociali`.
+- **Tre commenti di calcolo che dicevano il falso** (*8 agosto 2026*). In un progetto in cui
+  il commento *è* la dimostrazione, un caso "risolto a mano" con i numeri sbagliati è
+  peggio di nessun commento, perché sembra una prova. I numeri erano stati misurati su
+  configurazioni a due membri e incollati sopra test che ne usano tre (1125/2250/1125, non
+  1500/3000), e due commenti attribuivano a `NaN` un comportamento che è di `Infinity`:
+  `Decimal("NaN") < 0` solleva `InvalidOperation`, non restituisce `False`. Le asserzioni
+  erano giuste, le spiegazioni no.
 - **Importo eccedentario: frazione invece di differenza in punti percentuali**
   (*7 agosto 2026*). È la correzione più importante fatta finora, ed è un errore che spostava
   denaro reale fra categorie di membri. `scomponi_eccedentario` calcolava

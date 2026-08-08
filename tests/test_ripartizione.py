@@ -1,9 +1,15 @@
 """Casi risolti a mano per la ripartizione. L'invariante al centesimo è sacro."""
-from decimal import Decimal as D
+from decimal import Context, Decimal as D, getcontext, localcontext
 
 import pytest
 
 from cer_motore.ripartizione import (
+    CRITERI_CONSUMATORI,
+    CRITERI_PRODUTTORI,
+    RUOLI,
+    CONTESTO,
+    FONDO_ECCEDENTARIO,
+    VOCE_FONDI,
     InsiemeIncentivato,
     ripartisci,
     ripartisci_centesimi,
@@ -24,7 +30,7 @@ def test_ripartisci_centesimi_terzi():
 
 
 def test_ripartisci_centesimi_pesi_zero():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="pesi tutti nulli"):
         ripartisci_centesimi(100, {"a": D(0)})
 
 
@@ -288,7 +294,7 @@ def test_ripartisci_quote_dei_blocchi_devono_fare_uno():
     # Regola statutaria incoerente: 0.6 ai produttori e 0.5 ai consumatori farebbe
     # ripartire il 110% del residuo. Deve fallire prima di qualunque conto.
     regole = dict(REGOLE, quota_produttori=D("0.6"), quota_consumatori=D("0.5"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="devono fare esattamente 1"):
         ripartisci(regole, 10000, 0, {"P1": D(1)}, {"C1": D(1)}, MEMBRI)
 
 
@@ -504,26 +510,30 @@ def test_insieme_incentivato_la_soglia_non_si_puo_dimenticare():
 
 
 def test_insieme_incentivato_soglia_fuori_intervallo():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="fuori dall'intervallo"):
         InsiemeIncentivato("A", D(10), D(100), 500, D("1.5"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="fuori dall'intervallo"):
         InsiemeIncentivato("A", D(10), D(100), 500, D("-0.1"))
+    # Il messaggio nomina l'insieme: con due insiemi in gioco, sapere QUALE dei due
+    # porta la soglia sbagliata è metà della correzione.
+    with pytest.raises(ValueError, match="insieme 'cumulo_conto_capitale'"):
+        InsiemeIncentivato("cumulo_conto_capitale", D(10), D(100), 500, D("1.5"))
 
 
 def test_insieme_incentivato_energia_condivisa_oltre_l_immessa():
     # E_ACI,h = min(E_immessa,h; E_prelevata,h) ≤ E_immessa,h ora per ora (Regole
     # Operative pag. 40), quindi anche sui totali dell'insieme: un rapporto > 1 non
     # esiste, e di solito significa che i due argomenti sono stati scambiati.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="maggiore dell'energia immessa"):
         InsiemeIncentivato.sola_tariffa(D(1000), D(700), 20000)
 
 
 def test_insieme_incentivato_valori_negativi():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="energie negative"):
         InsiemeIncentivato.sola_tariffa(D(-1), D(100), 500)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="contributo negativo"):
         InsiemeIncentivato.sola_tariffa(D(10), D(100), -500)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="deve avere un nome"):
         InsiemeIncentivato("", D(10), D(100), 500, D("0.55"))
 
 
@@ -531,7 +541,7 @@ def test_scomponi_eccedentario_insiemi_rifiuta_nomi_duplicati():
     # Lo stesso insieme passato due volte conterebbe doppio il suo contributo senza
     # che nulla protesti: l'invariante reggerebbe (la somma in ingresso raddoppia con
     # quella in uscita) e il rendiconto pagherebbe due volte gli stessi impianti.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="nomi di insieme duplicati"):
         scomponi_eccedentario_insiemi([
             InsiemeIncentivato.sola_tariffa(D(700), D(1000), 20000),
             InsiemeIncentivato.sola_tariffa(D(700), D(1000), 20000),
@@ -559,7 +569,7 @@ def test_ripartisci_quote_negative_che_sommano_a_uno():
     # produttore. L'invariante finale non se ne accorgeva: è una somma, e
     # 13500 − 4500 + 1000 fa comunque 10000.
     regole = dict(REGOLE, quota_produttori=D("1.5"), quota_consumatori=D("-0.5"))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="non possono essere negative"):
         ripartisci(regole, 10000, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
 
 
@@ -569,7 +579,7 @@ def test_ripartisci_fondo_con_percentuale_negativa():
     # e residuo = 10000 − (−1000) = 11000, cioè 110,00 € da ripartire su 100,00 €
     # incassati, con la voce di fondo a −10,00 € a pareggiare il bilancio.
     regole = dict(REGOLE, fondi={"gestione": D("-0.10")})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="fondo 'gestione' è negativa"):
         ripartisci(regole, 10000, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
 
 
@@ -578,7 +588,7 @@ def test_ripartisci_fondi_che_sommano_a_piu_di_uno():
     # membri. Prima della guardia, base 100,00 € dava fondi a 7000 + 7000 = 14000 cent
     # e residuo −4000, spezzato in −2000 al blocco produttori e −2000 ai consumatori.
     regole = dict(REGOLE, fondi={"a": D("0.7"), "b": D("0.7")})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="sommano a 1.4"):
         ripartisci(regole, 10000, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
 
 
@@ -606,15 +616,17 @@ def test_ripartisci_fondi_arrotondati_che_sfondano_l_importo():
     # morirebbe con un AssertionError opaco. Meglio un ValueError che dice cosa è
     # successo.
     regole = dict(REGOLE, fondi={"a": D("0.5"), "b": D("0.5")})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="superano l'importo base di 1 centesimi"):
         ripartisci(regole, 1, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
 
 
 def test_ripartisci_importi_negativi():
     # Non esiste un incentivo negativo da ripartire: né sul base né sull'eccedentario.
-    with pytest.raises(ValueError):
+    # Il messaggio riporta ENTRAMBI gli importi, perché a colpo d'occhio non si sa
+    # quale dei due sia arrivato negativo.
+    with pytest.raises(ValueError, match="importo base -100 centesimi"):
         ripartisci(REGOLE, -100, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="importo eccedentario -100"):
         ripartisci(REGOLE, 10000, -100, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
 
 
@@ -702,3 +714,387 @@ def test_ripartisci_fondi_oltre_uno_anche_quando_arrotondano_tutti_a_zero():
     regole = dict(REGOLE, fondi={"a": D("0.4"), "b": D("0.4"), "c": D("0.4")})
     with pytest.raises(ValueError, match="sommano a"):
         ripartisci(regole, 1, 0, {"P1": D(500)}, {"C1": D(100)}, MEMBRI)
+
+
+# --- nomi riservati: collisioni misurate l'8/8/2026 -------------------------------
+#
+# Il risultato di `ripartisci` è un dict piatto {nome: {voce: centesimi}} in cui i fondi
+# occupano una chiave accanto ai membri, e i fondi sono a loro volta un dict di nomi
+# liberi. Due collisioni erano possibili, e nessuna delle due violava l'invariante
+# finale: è una somma, e una somma non si accorge di dove sono finiti gli addendi.
+# Nessuna guardia se ne accorgeva — il rendiconto mentiva e basta.
+
+
+def test_ripartisci_rifiuta_un_membro_chiamato_come_la_voce_dei_fondi():
+    # Misurato prima della guardia, con base 100,00 € e un socio di nome "_fondi"
+    # (consumatore, contributo di prelievo 100 kWh; gli altri due consumatori di
+    # MEMBRI sono C1 con 200 e C2 con 100):
+    #   fondo gestione = arrotonda(10000 × 0,10) = 1000 cent
+    #   residuo 9000 → 4500 al blocco produttori, 4500 ai consumatori
+    #   consumatori pro-quota 100 : 200 : 100 su 400 →
+    #     "_fondi" = 4500 × 100/400 = 1125 ; C1 = 4500 × 200/400 = 2250 ;
+    #     C2 = 4500 × 100/400 = 1125   (somma 4500, divisioni esatte, nessun resto)
+    # e i 1125 centesimi del socio finivano DENTRO il dizionario dei fondi:
+    #   esito["_fondi"] == {"gestione": 1000, "quota_consumatore": 1125}
+    # cioè nel rendiconto una voce di fondo da 11,25 € che nessuno statuto ha mai
+    # deliberato, mentre la riga del socio spariva del tutto dalla tabella (la chiave
+    # "_fondi" creata da {m: {} for m in membri} veniva sovrascritta subito dopo).
+    # Il totale tornava lo stesso — 1000 + 4500 + 1125 + 2250 + 1125 = 10000 — ed è
+    # proprio questo che rendeva il difetto invisibile: l'invariante di somma regge.
+    membri = dict(MEMBRI)
+    membri[VOCE_FONDI] = {"ruolo": "consumatore", "impresa": False}
+    with pytest.raises(ValueError, match="nome riservato"):
+        ripartisci(
+            REGOLE, 10000, 0,
+            energia_immessa_kwh={"P1": D(500)},
+            contributi_consumo_kwh={VOCE_FONDI: D(100), "C1": D(200), "C2": D(100)},
+            membri=membri,
+        )
+
+
+def test_ripartisci_rifiuta_un_fondo_col_nome_riservato_all_eccedentario():
+    # Misurato prima della guardia, con base 100,00 €, importo eccedentario 5,00 € e
+    # nessun consumatore diverso dalle imprese (quindi l'eccedentario va al fondo):
+    #   fondo statutario "finalita_sociali" = arrotonda(10000 × 0,10) = 1000 cent
+    #   importo eccedentario senza idonei                            =  500 cent
+    #   esito["_fondi"] == {"finalita_sociali": 1500}
+    # Una riga sola da 15,00 €, in cui non si distingue più quanto viene dallo statuto
+    # (liberamente deliberato) e quanto dal vincolo delle Regole Operative pag. 41, che
+    # ha una destinazione obbligata. La nota in fondo al rendiconto contava 1500
+    # centesimi di eccedentario invece di 500.
+    membri = {
+        "P1": {"ruolo": "produttore", "impresa": True},
+        "C2": {"ruolo": "consumatore", "impresa": True},
+    }
+    regole = dict(REGOLE, fondi={FONDO_ECCEDENTARIO: D("0.10")})
+    with pytest.raises(ValueError, match="nome riservato"):
+        ripartisci(regole, 10000, 500, {"P1": D(500)}, {"C2": D(100)}, membri)
+
+
+def test_il_fondo_riservato_e_rifiutato_anche_senza_importo_eccedentario():
+    # La collisione si produce solo nei periodi in cui l'eccedentario esiste e non
+    # trova idonei, ma lo statuto è valido o non lo è di suo: accettarlo finché i
+    # numeri non si incontrano significa scoprire il conflitto il primo mese in cui il
+    # vincolo scatta, cioè mentre si sposta denaro. Stesso errore, eccedentario nullo.
+    regole = dict(REGOLE, fondi={FONDO_ECCEDENTARIO: D("0.10")})
+    with pytest.raises(ValueError, match="nome riservato"):
+        ripartisci(regole, 10000, 0, {"P1": D(500)},
+                   {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_senza_collisione_le_due_provenienze_restano_distinte():
+    # Il rovescio della guardia: con un fondo statutario dal nome diverso, le due voci
+    # convivono nel rendiconto e si leggono separatamente.
+    #   fondo gestione = arrotonda(10000 × 0,10) = 1000 cent = 10,00 €
+    #   eccedentario senza consumatori idonei    =  500 cent =  5,00 €
+    #   residuo 9000 → 4500 al produttore P1 (unico), 4500 a C2 (unico consumatore)
+    #   totale 1000 + 500 + 4500 + 4500 = 10500 = 10000 + 500.
+    membri = {
+        "P1": {"ruolo": "produttore", "impresa": True},
+        "C2": {"ruolo": "consumatore", "impresa": True},
+    }
+    esito = ripartisci(REGOLE, 10000, 500, {"P1": D(500)}, {"C2": D(100)}, membri)
+    assert esito[VOCE_FONDI] == {"gestione": 1000, FONDO_ECCEDENTARIO: 500}
+    assert esito["P1"]["quota_produttore"] == 4500
+    assert esito["C2"]["quota_consumatore"] == 4500
+    assert sum(v for d in esito.values() for v in d.values()) == 10500
+
+
+# --- blocco senza destinatari, o con un criterio che non sa distinguerli ----------
+#
+# Fino all'8/8/2026 i due casi finivano nello stesso ValueError("pesi tutti nulli"),
+# sollevato dalle viscere di `ripartisci_centesimi` e senza il nome del blocco né del
+# criterio — mentre il ramo dell'importo eccedentario, davanti allo stesso problema,
+# ripiegava in silenzio sulle quote uguali. Quell'asimmetria non era una decisione.
+
+
+def test_blocco_senza_membri_e_con_denaro_e_un_errore_che_dice_quale():
+    # Statuto 50/50 e nessun membro con ruolo produttore o prosumer:
+    #   fondo gestione = 1000 cent ; residuo 9000 → 4500 al blocco produttori
+    #   4500 centesimi senza un solo destinatario possibile.
+    # Non è il criterio a mancare, sono i destinatari: nessun ripiego può inventare a
+    # chi pagare, e tacere farebbe sparire 45,00 € dal rendiconto.
+    solo_consumatori = {"C1": {"ruolo": "consumatore", "impresa": False}}
+    with pytest.raises(ValueError, match="blocco produttori"):
+        ripartisci(REGOLE, 10000, 0, {}, {"C1": D(100)}, solo_consumatori)
+    # Il messaggio dice quanto denaro, e con quale criterio si sarebbe dovuto ripartire.
+    with pytest.raises(ValueError, match="4500 centesimi"):
+        ripartisci(REGOLE, 10000, 0, {}, {"C1": D(100)}, solo_consumatori)
+    with pytest.raises(ValueError, match="energia_immessa"):
+        ripartisci(REGOLE, 10000, 0, {}, {"C1": D(100)}, solo_consumatori)
+
+
+def test_blocco_senza_membri_ma_con_quota_zero_e_legittimo():
+    # È il rimedio che il messaggio d'errore suggerisce, e deve funzionare: una CER di
+    # soli consumatori scrive quote.produttori = "0" e quote.consumatori = "1".
+    #   fondo gestione = arrotonda(10000 × 0,10) = 1000 cent
+    #   residuo 9000 spezzato 0 : 1 → 0 al blocco produttori, 9000 ai consumatori
+    #   blocco produttori vuoto e senza denaro: non ripartisce nulla, nessun errore
+    #   C1 unico consumatore → 9000 cent = 90,00 €. Totale 1000 + 9000 = 10000.
+    regole = dict(REGOLE, quota_produttori=D(0), quota_consumatori=D(1))
+    solo_consumatori = {"C1": {"ruolo": "consumatore", "impresa": False}}
+    esito = ripartisci(regole, 10000, 0, {}, {"C1": D(100)}, solo_consumatori)
+    assert esito[VOCE_FONDI] == {"gestione": 1000}
+    assert esito["C1"]["quota_consumatore"] == 9000
+    assert sum(v for d in esito.values() for v in d.values()) == 10000
+
+
+def test_pesi_tutti_nulli_con_membri_presenti_ripiega_a_quote_uguali_ovunque():
+    # Il caso a mano che chiude l'asimmetria: i pesi nulli capitano nello stesso
+    # riparto sia al blocco produttori sia al ramo eccedentario, e devono comportarsi
+    # allo stesso modo. Base 100,00 €, importo eccedentario 5,01 €.
+    #   Membri: P1 produttore (impresa), C1 consumatore (impresa, contributo 100 kWh),
+    #           C2 e C3 consumatori non imprese, contributo NULLO.
+    #   Energia immessa dichiarata: P1 = 0 kWh (mese di impianto fermo).
+    #
+    #   fondo gestione = arrotonda(10000 × 0,10) = 1000 cent
+    #   residuo 9000 → 4500 al blocco produttori, 4500 ai consumatori
+    #   BLOCCO PRODUTTORI: unico membro P1 con peso 0 → pesi tutti nulli → quote uguali
+    #     → P1 = 4500 cent (prima: ValueError "pesi tutti nulli")
+    #   BLOCCO CONSUMATORI: pesi 100, 0, 0 → NON tutti nulli, il criterio distingue
+    #     → C1 = 4500, C2 = 0, C3 = 0
+    #   ECCEDENTARIO 501 cent ai soli non-imprese C2 e C3, pesi entrambi nulli →
+    #     quote uguali: 501/2 = 250,5 ciascuno → troncate 250 + 250 = 500, residuo 1;
+    #     resti pari, chiave decrescente "C3" > "C2" → C3 = 251, C2 = 250.
+    #   Totale: 1000 + 4500 + 4500 + 250 + 251 = 10501 = 10000 + 501.
+    membri = {
+        "P1": {"ruolo": "produttore", "impresa": True},
+        "C1": {"ruolo": "consumatore", "impresa": True},
+        "C2": {"ruolo": "consumatore", "impresa": False},
+        "C3": {"ruolo": "consumatore", "impresa": False},
+    }
+    esito = ripartisci(
+        REGOLE, 10000, 501,
+        energia_immessa_kwh={"P1": D(0)},
+        contributi_consumo_kwh={"C1": D(100), "C2": D(0), "C3": D(0)},
+        membri=membri,
+    )
+    assert esito["P1"]["quota_produttore"] == 4500
+    assert esito["C1"]["quota_consumatore"] == 4500
+    assert esito["C2"]["quota_consumatore"] == 0
+    assert esito["C2"]["quota_eccedentaria"] == 250
+    assert esito["C3"]["quota_eccedentaria"] == 251
+    assert esito[VOCE_FONDI] == {"gestione": 1000}
+    assert sum(v for d in esito.values() for v in d.values()) == 10501
+
+
+def test_peso_negativo_di_un_membro_non_passa():
+    # Un peso negativo darebbe una quota negativa a quel membro — lo farebbe PAGARE
+    # per gli altri — e l'invariante finale reggerebbe lo stesso, perché è una somma.
+    # È la stessa forma del bug delle quote negative chiuso il 7/8/2026, un piano più
+    # in basso: lì la quota del blocco, qui il peso del singolo.
+    with pytest.raises(ValueError, match="peso negativo"):
+        ripartisci(REGOLE, 10000, 0, {"P1": D(-5)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    # Il messaggio nomina il blocco, il membro e il criterio con cui si stava pesando.
+    with pytest.raises(ValueError, match="blocco produttori: 'P1'"):
+        ripartisci(REGOLE, 10000, 0, {"P1": D(-5)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_peso_non_finito_di_un_membro_non_passa():
+    # I due valori non finiti si comportano in modo opposto davanti alla guardia sul
+    # segno, e serve intercettarli entrambi ma per ragioni diverse (misurato con le
+    # trap di default, che sono anche quelle di CONTESTO):
+    #   Decimal("Infinity") < 0  →  False: scivola oltre la guardia senza farla
+    #     scattare, e un peso infinito manderebbe a zero le quote di tutti gli altri;
+    #   Decimal("NaN") < 0       →  solleva InvalidOperation, che è ArithmeticError e
+    #     NON ValueError: non passa, ma esce dalla porta sbagliata, e un chiamante che
+    #     cattura ValueError come il resto del modulo gli insegna se lo prende in faccia.
+    # La guardia serve in un caso a fermare e nell'altro a tradurre.
+    for peso in (D("NaN"), D("Infinity")):
+        with pytest.raises(ValueError, match="non è un numero finito"):
+            ripartisci(REGOLE, 10000, 0, {"P1": peso},
+                       {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+# --- valori non finiti e tipi sbagliati nelle regole statutarie -------------------
+#
+# Misurato l'8/8/2026: nessuno di questi casi dava ValueError, che è il tipo su cui il
+# resto del motore ha insegnato ai chiamanti a contare. `regole.py` li intercetta tutti
+# quando lo statuto arriva da un file TOML, ma `ripartisci` è pubblica e il suo
+# docstring prometteva una validazione "prima di qualunque conto" che non aveva.
+
+
+def test_ripartisci_rifiuta_percentuali_non_finite():
+    # Prima: decimal.InvalidOperation, che è ArithmeticError e NON ValueError, sollevato
+    # dal confronto `perc < 0` — NaN non è né minore né maggiore di nulla.
+    with pytest.raises(ValueError, match="non è un numero finito"):
+        ripartisci(dict(REGOLE, fondi={"gestione": D("NaN")}), 10000, 0,
+                   {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    with pytest.raises(ValueError, match="non è un numero finito"):
+        ripartisci(dict(REGOLE, quota_produttori=D("NaN"), quota_consumatori=D("NaN")),
+                   10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    # Infinity scattava per caso, sulla guardia "somma dei fondi > 1", con un messaggio
+    # che parlava di percentuali sommate a Infinity invece che del valore malformato.
+    with pytest.raises(ValueError, match="non è un numero finito"):
+        ripartisci(dict(REGOLE, fondi={"gestione": D("Infinity")}), 10000, 0,
+                   {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_ripartisci_rifiuta_percentuali_che_non_sono_decimal():
+    # Prima: TypeError, e per il float nessun errore affatto finché non incontrava un
+    # Decimal. Il denaro non passa dai float (CLAUDE.md, regola 2): 0,10 in binario è
+    # 0,1000000000000000055511151231257827…
+    with pytest.raises(ValueError, match="non è una percentuale utilizzabile"):
+        ripartisci(dict(REGOLE, fondi={"gestione": 0.10}), 10000, 0,
+                   {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    with pytest.raises(ValueError, match="non è una percentuale utilizzabile"):
+        ripartisci(dict(REGOLE, quota_produttori="0.5", quota_consumatori="0.5"),
+                   10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    # `bool` è sottoclasse di `int`: senza il ramo dedicato, quota_produttori = True
+    # varrebbe 1 e manderebbe tutto il residuo ai produttori.
+    with pytest.raises(ValueError, match="valore vero/falso"):
+        ripartisci(dict(REGOLE, quota_produttori=True, quota_consumatori=False),
+                   10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_ripartisci_accetta_le_quote_scritte_come_interi():
+    # Il rovescio della guardia sui tipi: gli interi sono esatti e restano ammessi,
+    # come in `regole.py` (`produttori = 1` senza virgolette nel TOML).
+    #   fondo gestione = 1000 ; residuo 9000 spezzato 1 : 0 → tutto ai produttori
+    #   P1 unico produttore → 9000 cent = 90,00 €. Totale 1000 + 9000 = 10000.
+    regole = dict(REGOLE, quota_produttori=1, quota_consumatori=0)
+    esito = ripartisci(regole, 10000, 0, {"P1": D(500)},
+                       {"C1": D(200), "C2": D(100)}, MEMBRI)
+    assert esito["P1"]["quota_produttore"] == 9000
+    assert esito["C1"]["quota_consumatore"] == 0
+    assert sum(v for d in esito.values() for v in d.values()) == 10000
+
+
+# --- indipendenza dal contesto Decimal globale ------------------------------------
+#
+# `Decimal` legge precisione e trap dal contesto del CHIAMANTE, che è stato globale e
+# mutabile. Un modulo che si dichiara puro non può dipenderne: le funzioni pubbliche
+# girano in una copia di `ripartizione.CONTESTO`.
+
+
+def test_le_guardie_sulle_somme_reggono_a_precisione_ridotta():
+    # Misurato l'8/8/2026 dentro localcontext(Context(prec=5)), senza CONTESTO:
+    #   quota_produttori 0,500001 + quota_consumatori 0,5 fa 1,000001 esatto, ma la
+    #   somma calcolata a 5 cifre significative dà 1,0000, quindi `qp + qc != 1` NON
+    #   scattava e uno statuto malformato passava.
+    # Il danno NON era denaro perso: il metodo del resto maggiore normalizza sui pesi
+    # e distribuiva comunque esattamente i 9000 centesimi del residuo (blocchi 4500 e
+    # 4500, consumatori C1 3000 e C2 1500 pro-quota 200:100). Il danno era che la
+    # guardia dipendeva dal contesto Decimal del CHIAMANTE: la stessa CER, ripartita
+    # da due programmi con precisione diversa, otteneva l'una un errore e l'altra un
+    # riparto. Per questo le funzioni pubbliche girano in una copia di CONTESTO.
+    with localcontext(Context(prec=5)):
+        with pytest.raises(ValueError, match="devono fare esattamente 1"):
+            ripartisci(dict(REGOLE, quota_produttori=D("0.500001"),
+                            quota_consumatori=D("0.5")),
+                       10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+        # Stessa cosa per i fondi: 0,999999 + 0,000002 = 1,000001, che a 5 cifre dà
+        # 1,0000 e passava la guardia `somma > 1` (fondi risultanti: a 10000, b 0).
+        with pytest.raises(ValueError, match="sommano a"):
+            ripartisci(dict(REGOLE, fondi={"a": D("0.999999"), "b": D("0.000002")}),
+                       10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_il_riparto_non_cambia_col_contesto_del_chiamante():
+    # Caso a mano: 10000,00 € (1000000 centesimi) in tre parti uguali.
+    #   quota esatta = 1000000/3 = 333333,333… → troncata 333333 ciascuna
+    #   somma 999999, residuo 1 centesimo; resti tutti pari, chiave decrescente
+    #   → il centesimo va a "c": 333333, 333333, 333334.
+    # A precisione 5, invece, la divisione dà 3,3333E+5 = 333330 (non 333333,33…):
+    #   troncate 333330 × 3 = 999990, residuo 10 centesimi da assegnare a 3 sole
+    #   chiavi → `resti[:10]` ne restituisce 3, ogni quota sale di 1 e la somma finale
+    #   è 999993, non 1000000. L'invariante sacro cadeva, con un AssertionError nudo:
+    #   verificato l'8/8/2026 chiamando la funzione non avvolta.
+    atteso = {"a": 333333, "b": 333333, "c": 333334}
+    assert ripartisci_centesimi(1000000, {"a": D(1), "b": D(1), "c": D(1)}) == atteso
+    with localcontext(Context(prec=5)):
+        quote = ripartisci_centesimi(1000000, {"a": D(1), "b": D(1), "c": D(1)})
+    assert quote == atteso
+    assert sum(quote.values()) == 1000000
+
+
+def test_le_guardie_reggono_anche_col_contesto_senza_trap():
+    # L'altro verso dello stesso problema: un chiamante può disattivare le trap, e
+    # allora `Decimal("NaN") < 0` non solleva più nulla, restituisce False. Ogni
+    # guardia scritta come confronto lascerebbe passare NaN in silenzio; le guardie
+    # esplicite su `is_finite()` no.
+    with localcontext(Context(prec=28, traps=[])):
+        assert (D("NaN") < 0) is False  # il presupposto del difetto, non un'ipotesi
+        with pytest.raises(ValueError, match="non è un numero finito"):
+            ripartisci(dict(REGOLE, fondi={"gestione": D("NaN")}), 10000, 0,
+                       {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_il_motore_non_sporca_ne_eredita_il_contesto_del_chiamante():
+    # La purezza vale in entrambi i versi. `localcontext(CONTESTO)` installa una COPIA:
+    # i flag alzati durante il calcolo non si accumulano sulla costante di modulo, e il
+    # contesto del chiamante torna quello di prima all'uscita.
+    CONTESTO.clear_flags()
+    contesto_chiamante = Context(prec=5)
+    with localcontext(contesto_chiamante):
+        prima = getcontext().prec
+        ripartisci_centesimi(10001, {"x": D(3), "y": D(2), "z": D(2)})
+        assert getcontext().prec == prima == 5
+    assert not any(CONTESTO.flags.values())
+
+
+# --- vocabolario chiuso di ruoli e criteri (regressioni dell'8/8/2026) -------------
+#
+# Ne' un ruolo scritto male ne' un criterio inesistente sollevavano qualcosa da soli:
+# il socio non entrava in nessun blocco e il criterio ignoto cadeva nel ramo di
+# default. In entrambi i casi il riparto usciva plausibile e l'invariante di somma
+# reggeva, quindi nessuna guardia a valle se ne accorgeva.
+
+
+def test_ripartisci_rifiuta_un_ruolo_sconosciuto():
+    # Misurato prima della guardia, con "consumatori" al posto di "consumatore" su C2:
+    #   C2 non entra ne fra i produttori ne fra i consumatori, resta con esito {} e
+    #   il blocco consumatori da 4500 cent va tutto a C1, unico rimasto in lista.
+    #   Prima:  C1 = 4500, C2 = {}        Corretto: C1 = 3000, C2 = 1500 (200:100)
+    # 1500 centesimi cambiano tasca senza che nulla lo segnali, perche il totale
+    # ripartito resta 10000 in entrambi i casi.
+    membri = dict(MEMBRI)
+    membri["C2"] = {"ruolo": "consumatori", "impresa": False}
+    with pytest.raises(ValueError, match="ruolo 'consumatori' sconosciuto"):
+        ripartisci(REGOLE, 10000, 0, {"P1": D(500)},
+                   {"C1": D(200), "C2": D(100)}, membri)
+
+
+def test_ripartisci_rifiuta_un_membro_senza_ruolo():
+    # Prima dava KeyError('ruolo') dalle viscere della selezione dei blocchi, che non
+    # dice quale membro ne cosa ci si aspettava.
+    with pytest.raises(ValueError, match="manca la chiave 'ruolo'"):
+        ripartisci(REGOLE, 10000, 0, {"P1": D(500)}, {"C1": D(200)},
+                   {"P1": {"impresa": False}})
+
+
+def test_ripartisci_accetta_tutti_e_tre_i_ruoli_previsti():
+    # La guardia non deve restringere il vocabolario reale: prosumer compreso, che sta
+    # in entrambi i blocchi. Nessuna di queste tre anagrafiche va rifiutata.
+    for ruolo in RUOLI:
+        membri = dict(MEMBRI)
+        membri["C2"] = {"ruolo": ruolo, "impresa": False}
+        esito = ripartisci(REGOLE, 10000, 0, {"P1": D(500), "C2": D(100)},
+                           {"C1": D(200), "C2": D(100)}, membri)
+        assert sum(v for d in esito.values() for v in d.values()) == 10000
+
+
+def test_ripartisci_rifiuta_un_criterio_inesistente():
+    # Misurato: criterio_produttori = "pro_capite" non veniva rifiutato. Cadeva nel
+    # ramo "non e quote_uguali" e ripartiva pro-quota energia immessa, cioe dava una
+    # risposta plausibile a una domanda che nessuno aveva posto. Peggio: i messaggi
+    # d'errore del blocco lo citavano come "criterio dichiarato", dandogli
+    # un'autorevolezza che nel calcolo non aveva.
+    with pytest.raises(ValueError, match="non è un criterio supportato"):
+        ripartisci(dict(REGOLE, criterio_produttori="pro_capite"), 10000, 0,
+                   {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+    with pytest.raises(ValueError, match="non è un criterio supportato"):
+        ripartisci(dict(REGOLE, criterio_consumatori="a_teste"), 10000, 0,
+                   {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI)
+
+
+def test_ripartisci_accetta_tutti_i_criteri_del_vocabolario():
+    # Contro-verifica: ogni criterio dichiarato supportato deve funzionare davvero.
+    # Se qualcuno lo aggiunge all'elenco senza implementarlo, questo test cade.
+    for cp in CRITERI_PRODUTTORI:
+        for cc in CRITERI_CONSUMATORI:
+            esito = ripartisci(
+                dict(REGOLE, criterio_produttori=cp, criterio_consumatori=cc),
+                10000, 0, {"P1": D(500)}, {"C1": D(200), "C2": D(100)}, MEMBRI,
+            )
+            assert sum(v for d in esito.values() for v in d.values()) == 10000

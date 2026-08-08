@@ -1,18 +1,23 @@
 """Demo end-to-end su dati mock: python -m cer_motore
 
-Elabora DUE scenari mock (docs/MOCK-GSE.md) con lo stesso statuto, per mostrare il
-comportamento del vincolo dell'importo eccedentario nei due regimi:
+Elabora TRE scenari mock (docs/MOCK-GSE.md) con lo stesso statuto, per mostrare il
+comportamento del vincolo dell'importo eccedentario al variare del solo dato fisico:
 
-- `equilibrata`: rapporto energia condivisa / energia immessa sotto la soglia del 55%,
-  il vincolo non scatta e la colonna "Quota eccedentaria" è a zero;
-- `concentrata`: rapporto ben sopra la soglia, il vincolo scatta e una fetta del TIP va
-  ai soli consumatori diversi dalle imprese (Regole Operative pag. 41).
+- `equilibrata`: rapporto energia condivisa / energia immessa 0,27, sotto la soglia del
+  55%, il vincolo non scatta e la colonna "Quota eccedentaria" è a zero;
+- `paese`: rapporto 0,61, appena sopra la soglia; il vincolo scatta ma prende il 5,6%
+  della tariffa premio, non di più;
+- `concentrata`: rapporto 0,98, il vincolo scatta in pieno e si porta via il 42,6% del
+  TIP a favore dei soli consumatori diversi dalle imprese (Regole Operative pag. 41).
 
-Stampa un confronto sintetico dei due e il rendiconto completo del secondo — quello in
-cui si vede girare la parte più delicata del motore.
+Cosa stampa, e perché non tutto: la TABELLA di confronto dei tre — che è dove la
+progressione si legge in tre righe — e UN SOLO rendiconto per esteso, quello di
+`concentrata`, dove la parte più delicata del motore si vede girare con i numeri più
+grandi. Tre rendiconti a video sarebbero un muro di testo, e chi ha quindici minuti
+smette di leggere prima della fine; i tre file completi restano su disco.
 
 Tutto ciò che la demo scrive sta sotto ./data/, che è la sua cartella usa-e-getta: i CSV
-in data/<scenario>/, i rendiconti completi di entrambi gli scenari in
+in data/<scenario>/, i rendiconti completi di tutti e tre gli scenari in
 data/rendiconto-<scenario>.md. Una sola cartella da cancellare, e già ignorata da git.
 """
 import sys
@@ -34,7 +39,7 @@ from .tariffe import SOGLIA_ECCEDENTARIO_SOLA_TARIFFA, incentivo_periodo
 MESE = "giugno 2026"
 PERIODO = f"{MESE} (dati mock)"
 
-# Statuto identico nei due scenari: così l'unica differenza fra i due rendiconti viene
+# Statuto identico nei tre scenari: così l'unica differenza fra i tre rendiconti viene
 # dal dato fisico (chi produce, chi consuma e quando), non dalle regole di riparto.
 #
 # È scritto in TOML e passa dalla stessa validazione di un file vero (`regole.da_testo`,
@@ -64,7 +69,7 @@ def elabora(scenario: Scenario, cartella_dati: Path) -> tuple[dict, dict]:
     l'energia immessa e la soglia usata, e il riparto per membro in centesimi.
 
     Il vincolo eccedentario passa dalla forma aggregata per insiemi delle Regole
-    Operative pag. 42, anche se qui l'insieme è UNO SOLO: nessuno dei due scenari mock
+    Operative pag. 42, anche se qui l'insieme è UNO SOLO: nessuno degli scenari mock
     ha impianti in cumulo con contributo in conto capitale, quindi l'insieme a soglia
     45% sarebbe vuoto. Ci passa lo stesso di proposito — una funzione che nessun
     percorso reale attraversa è una funzione di cui non si sa se è cablata bene.
@@ -115,8 +120,27 @@ def elabora(scenario: Scenario, cartella_dati: Path) -> tuple[dict, dict]:
     return totale, esito
 
 
-def confronto(risultati: list[tuple[Scenario, dict, dict]]) -> str:
-    """Tabella di confronto fra scenari: dove sta il rapporto EC/EI e cosa ne segue."""
+def confronto(
+    risultati: list[tuple[Scenario, dict, dict]], per_esteso: Scenario
+) -> str:
+    """Tabella di confronto fra scenari: dove sta il rapporto EC/EI e cosa ne segue.
+
+    L'importo eccedentario è mostrato anche come PERCENTUALE DELLA TARIFFA PREMIO, non
+    solo in euro: è quella la grandezza che il vincolo determina (differenza in punti
+    percentuali fra rapporto e soglia, Regole Operative pag. 42), ed è l'unico modo per
+    vedere in tabella che a rapporto 0,61 il vincolo morde per pochi punti mentre a
+    0,98 si porta via quasi metà del contributo. In euro i due numeri non si possono
+    confrontare, perché gli scenari hanno impianti di taglia diversa.
+
+    `per_esteso` è lo scenario di cui la demo stampa il rendiconto completo subito
+    dopo: passarlo evita che questa riga di chiusura menta il giorno in cui la demo
+    cambia idea su quale stampare.
+    """
+    # La colonna "Scenario" porta il NOME breve, non il titolo. Il titolo dello
+    # scenario più lungo è di 84 caratteri e da solo portava la riga a 200: una tabella
+    # Markdown più larga della console va a capo, e una tabella andata a capo non è più
+    # una tabella. I titoli per esteso stanno sotto, in righe che possono avvolgersi
+    # senza far danno.
     righe = [
         f"# cer-motore — demo su dati mock, {MESE}",
         "",
@@ -126,18 +150,31 @@ def confronto(risultati: list[tuple[Scenario, dict, dict]]) -> str:
     for scenario, totale, _esito in risultati:
         rapporto = totale["ec_tot_kwh"] / totale["immissioni_tot_kwh"]
         soglia = totale["soglia_eccedentario"]
-        stato = (f"scatta: {_euro(totale['eccedentario_cent'])} ai consumatori non-imprese"
-                 if totale["eccedentario_cent"] else "non scatta")
+        ecc = totale["eccedentario_cent"]
+        if ecc:
+            # L'importo eccedentario in euro non si può confrontare fra scenari, che
+            # hanno impianti di taglia diversa: la percentuale sul TIP sì, ed è la
+            # grandezza che il vincolo determina davvero (Regole Operative pag. 42).
+            quota = Decimal(ecc) / totale["tip_cent"] * 100
+            stato = f"scatta: {_euro(ecc)}, il {quota:.1f}% del TIP"
+        else:
+            stato = "non scatta"
         righe.append(
-            f"| {scenario.titolo} | {totale['immissioni_tot_kwh']:.0f} kWh | "
+            f"| `{scenario.nome}` | {totale['immissioni_tot_kwh']:.0f} kWh | "
             f"{totale['ec_tot_kwh']:.0f} kWh | {rapporto * 100:.1f}% | "
             f"{soglia * 100:.1f}% | {stato} |"
         )
+    righe.append("")
+    for scenario, _totale, _esito in risultati:
+        righe.append(f"- `{scenario.nome}` — {scenario.titolo}")
     righe += [
+        "",
+        "L'importo eccedentario va ai soli consumatori diversi dalle imprese "
+        "(Regole Operative pag. 41).",
         "",
         "Rendiconti completi: "
         + " · ".join(f"`data/rendiconto-{s.nome}.md`" for s, _, _ in risultati)
-        + ". Qui sotto quello dello scenario che fa scattare il vincolo.",
+        + f". Qui sotto, per esteso, solo quello di `{per_esteso.nome}`.",
     ]
     return "\n".join(righe)
 
@@ -160,7 +197,9 @@ def main() -> None:
     dati = Path.cwd() / "data"
     risultati: list[tuple[Scenario, dict, dict]] = []
     rendiconti: dict[str, str] = {}
-    for scenario in (mock.EQUILIBRATA, mock.CONCENTRATA):
+    # `SCENARI` è già in ordine di rapporto EC/EI crescente (mock.py): la tabella di
+    # confronto si legge come una scala, da "non scatta" a "si porta via il 42,6%".
+    for scenario in mock.SCENARI.values():
         totale, esito = elabora(scenario, dati / scenario.nome)
         testo = rendiconto_markdown(f"{PERIODO} — {scenario.titolo}", totale, esito,
                                     scenario.membri())
@@ -168,7 +207,8 @@ def main() -> None:
         risultati.append((scenario, totale, esito))
         rendiconti[scenario.nome] = testo
 
-    print(confronto(risultati))
+    # Un solo rendiconto a video, e i tre file su disco: vedi il docstring del modulo.
+    print(confronto(risultati, mock.CONCENTRATA))
     print()
     print(rendiconti[mock.CONCENTRATA.nome])
 

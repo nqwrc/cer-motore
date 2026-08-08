@@ -3,7 +3,21 @@
 In ordine di priorità. Il gate della v0.1 (Fase 3 della roadmap open source personale, repo
 privato `personal-archive`): un estraneo installa e ottiene un risultato utile in meno di 15 minuti.
 
-## Fatti
+## Cosa resta aperto
+
+Dodici voci su quindici sono chiuse. Restano, in ordine di quanto sbloccherebbero:
+
+- **9 — adapter per l'export GSE reale**: il solo punto che non dipende da noi. Finché
+  nessuna CER passa un export vero dall'area clienti, il formato di `mock.py` resta
+  un'assunzione documentata e il motore non può essere usato su dati veri.
+- **13 — cumulo con contributo in conto capitale**: la formula è verificata e implementata
+  come parametro, manca la partizione dell'energia condivisa fra esente e non esente.
+- **14 — rendiconto in CSV** con i campi utili al commercialista.
+
+L'elenco numerato qui sotto è cronologico e le voci sono citate per numero dal codice e
+dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si è imparato.
+
+## Le voci, in ordine
 
 1. **Appendice B confermata** — *fatto 7 agosto 2026*. Il PDF ufficiale GSE (171 pagine) è
    interamente estraibile: il "troncamento" era un limite dello strumento usato allora, non
@@ -30,11 +44,9 @@ privato `personal-archive`): un estraneo installa e ottiene un risultato utile i
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
 4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
-   **136 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
+   **162 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
    commento) e il resto guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
    periodo interamente senza immissioni, arrotondamenti cattivi al centesimo, bordi del cap.
-
-## Da fare
 
 5. ~~**Un secondo scenario mock sopra soglia**~~ — *fatto 7 agosto 2026*. `mock.py` non
    genera più una sola CER: espone uno `Scenario` (impianti, utenze, anagrafica, zone) e
@@ -106,29 +118,51 @@ privato `personal-archive`): un estraneo installa e ottiene un risultato utile i
     CHANGELOG. E la **segnalazione privata di GitHub è disattivata** su questo repository:
     `SECURITY.md` oggi lo dice esplicitamente, ma se la si abilita (Settings > Code
     security) il documento va rimesso a indicarla.
-11. **Uno scenario mock nella fascia critica 0,55–0,70.** I due scenari attuali stanno a
-    0,272 e 0,976, cioè lontanissimi dalla soglia da entrambi i lati. Il bug più costoso
-    che il progetto abbia trovato — la frazione al posto della differenza in punti
-    percentuali — sbagliava del +79% proprio a rapporto 0,56, e quella fascia oggi la
-    presidiano solo i test unitari. Basterebbe il `concentrata` con l'impianto raddoppiato.
-12. **Robustezza residua, trovata in verifica avversariale e non ancora chiusa** (nessuna
-    di queste sposta denaro oggi, tutte lo farebbero il giorno in cui qualcuno ci passa):
-    - un membro chiamato `_fondi` finisce dentro il dizionario dei fondi e il rendiconto
-      mente, con l'invariante di somma che regge lo stesso; simmetricamente un fondo
-      statutario chiamato `finalita_sociali` si fonde con l'eccedentario;
-    - un blocco con quota > 0 e nessun membro (o membri a energia nulla) muore con
-      `ValueError: pesi tutti nulli`, che non dice quale blocco né quale criterio. Va
-      deciso se è un errore o un caso legittimo col ripiego a quote uguali, come già fa
-      il ramo eccedentario: oggi non è deciso, è capitato;
-    - `NaN` passato a mano a `ripartisci` sfugge alle guardie e dà `InvalidOperation`, che
-      è `ArithmeticError` e non `ValueError`. `regole.py` lo intercetta, ma il docstring di
-      `ripartisci` promette una validazione che sul tipo e su `NaN` non ha;
-    - le guardie di `ripartisci()` verificano solo il tipo di eccezione, mentre quelle di
-      `regole.py` verificano il messaggio: è l'asimmetria che aveva lasciato invisibile una
-      guardia morta (la somma dei fondi > 1, che sopravviveva al mutation testing);
-    - la somma delle quote usa il contesto `Decimal` globale: dentro un `localcontext`
-      a precisione bassa passano quote che non chiudono. Un modulo che si dichiara puro
-      non dovrebbe dipendere da stato globale mutabile.
+11. ~~**Uno scenario mock nella fascia critica 0,55-0,70**~~ — *fatto 8 agosto 2026*.
+    Terzo scenario `paese`: una CER di paese con 90 kW di fotovoltaico (50 sul tetto del
+    supermercato, 40 su quello della palestra comunale) davanti a otto utenze. Rapporto
+    EC/EI **0,606**, con il vincolo che scatta ma prende solo il **5,6%** della tariffa
+    premio, contro il 42,6% del `concentrata`. È il regime in cui l'errore corretto il
+    7 agosto sbagliava di più e passava più inosservato: lì avrebbe assegnato 97,46 €
+    invece di 59,09 €, cioè **+65%**, su un importo abbastanza piccolo da non insospettire
+    nessuno.
+
+    Il suggerimento che questa voce conteneva — "basterebbe il `concentrata` con
+    l'impianto raddoppiato" — **era sbagliato**, ed è stato misurato invece che seguito:
+    dà 0,81-0,83, ancora fuori fascia. Per portare quel mix dentro la fascia servirebbe un
+    impianto triplo davanti a un'officina, che non è una CER che qualcuno costruirebbe.
+    La configurazione è stata quindi dimensionata, non azzeccata.
+
+    La posizione nella fascia è **strutturale, non fortunata**: verificata su tutti e
+    dodici i mesi del 2026, dove il rapporto resta fra 0,596 e 0,606 — un punto
+    percentuale di escursione contro cinque di margine dalla soglia. Lo scenario copre
+    anche una combinazione che gli altri due non esercitavano: un prosumer che **non** è
+    un'impresa (il comune), quindi prende insieme quota da produttore e quota
+    eccedentaria.
+12. ~~**Robustezza residua trovata in verifica avversariale**~~ — *fatto 8 agosto 2026*.
+    Tutti e sei i punti chiusi, ciascuno prima riprodotto eseguendo il codice:
+    - `VOCE_FONDI` e `FONDO_ECCEDENTARIO` sono ora **nomi riservati**, rifiutati sia da
+      `ripartisci` sia — per il fondo — da `regole.py`, che è dove il conflitto capiterà
+      davvero: nessun nome è più naturale, per uno statuto italiano, di
+      `finalita_sociali` per il fondo delle finalità sociali;
+    - i tre blocchi si comportano allo stesso modo davanti ai pesi nulli, in
+      `_ripartisci_blocco`: errore che nomina blocco, importo e criterio se non c'è
+      nessun membro, ripiego a quote uguali se i membri ci sono ma pesano zero — la
+      scelta che il solo ramo eccedentario già applicava;
+    - `NaN` e `Infinity` sono fermati prima dei confronti, e per ragioni opposte:
+      `Infinity < 0` è `False` e scivola oltre la guardia, `Decimal("NaN") < 0` solleva
+      `InvalidOperation`, che è `ArithmeticError` e non `ValueError`;
+    - tutte le guardie sono ora verificate **sul messaggio** e non sul solo tipo di
+      eccezione: era l'asimmetria che aveva lasciato viva una guardia morta;
+    - le funzioni pubbliche girano in una copia di `CONTESTO = Context(prec=28)` e non
+      dipendono più dal contesto `Decimal` del chiamante.
+
+    Aggiunto in corsa, non previsto: **ruoli e criteri sono vocabolari chiusi**. Un ruolo
+    scritto male non sollevava nulla — il socio non entrava in nessun blocco, restava con
+    un esito vuoto e la sua quota andava agli altri. Misurato: con `consumatori` al posto
+    di `consumatore`, 1500 centesimi cambiavano tasca in silenzio, con l'invariante di
+    somma che reggeva. Un criterio inesistente cadeva nel ramo di default e ripartiva
+    pro-quota energia, cioè dava una risposta plausibile a una domanda mai posta.
 13. **Cumulo conto capitale (PNRR)**: la formula c'è ed è verificata — `TIP × (1 − F)`, F da
     0 a 0,50, esposta come parametro di `tip_unitaria`. Manca la parte difficile:
     l'energia afferente a punti di prelievo di enti territoriali, enti religiosi, enti del

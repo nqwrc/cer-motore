@@ -3,7 +3,7 @@
 Deterministico (seed fisso per scenario): una CER fittizia romagnola, un mese di misure
 orarie. Unico modulo (con __main__) autorizzato a fare I/O.
 
-Gli scenari sono due, con lo STESSO formato di file e le stesse assunzioni di
+Gli scenari sono tre, con lo STESSO formato di file e le stesse assunzioni di
 docs/MOCK-GSE.md: cambia solo la composizione fisica della configurazione, cioè quanti
 impianti, quanto grandi e chi consuma. Servono perché il rapporto fra energia condivisa
 ed energia immessa — che governa il vincolo dell'importo eccedentario (docs/FORMULE.md
@@ -11,12 +11,22 @@ ed energia immessa — che governa il vincolo dell'importo eccedentario (docs/FO
 
 - `EQUILIBRATA`: CER di quartiere, 2 impianti FV e 8 utenze miste. Rapporto EC/EI ≈ 0,27,
   molto sotto la soglia del 55%: il vincolo eccedentario NON scatta.
+- `PAESE`: CER di paese, produzione di poco superiore ai consumi diurni. Rapporto
+  EC/EI ≈ 0,60, appena sopra la soglia: il vincolo scatta ma morde poco, il 5,6% della
+  tariffa premio.
 - `CONCENTRATA`: CER artigianale, un solo impianto FV piccolo e pochi grandi consumatori
-  diurni. Rapporto EC/EI oltre il 90%: il vincolo eccedentario SCATTA.
+  diurni. Rapporto EC/EI oltre il 90%: il vincolo eccedentario scatta in pieno, il 42,6%.
 
-Il secondo scenario non è un caso di scuola: una configurazione con l'impianto
-sottodimensionato rispetto ai prelievi condivide quasi tutto ciò che immette, ed è
-esattamente la situazione che il vincolo dell'importo eccedentario intende intercettare.
+`CONCENTRATA` non è un caso di scuola: una configurazione con l'impianto sottodimensionato
+rispetto ai prelievi condivide quasi tutto ciò che immette, ed è esattamente la situazione
+che il vincolo dell'importo eccedentario intende intercettare.
+
+`PAESE` presidia la FASCIA CRITICA 0,55–0,70, cioè dove sta l'errore più costoso che il
+progetto abbia trovato: fino al 7 ago 2026 l'importo eccedentario era calcolato come
+`(rapporto − soglia)/rapporto` invece che come differenza in punti percentuali, e quella
+forma sbaglia tanto più quanto più il rapporto è vicino alla soglia (+65% al rapporto di
+questo scenario, +11% a rapporto 0,90). Con i soli scenari a 0,27 e 0,98 quella fascia
+non era attraversata da nessun percorso end-to-end.
 """
 import csv
 import random
@@ -188,7 +198,7 @@ class Scenario:
         return out
 
 
-# --- I due scenari -----------------------------------------------------------------
+# --- I tre scenari -----------------------------------------------------------------
 
 EQUILIBRATA = Scenario(
     nome="equilibrata",
@@ -210,6 +220,39 @@ EQUILIBRATA = Scenario(
         Utenza("IT001E0000108L", "M10", "residenziale"),
     ),
     imprese=frozenset({"M01-capannone", "M09-bar"}),
+)
+
+PAESE = Scenario(
+    nome="paese",
+    titolo="CER di paese: FV da 50 kW sul supermercato e 40 kW sulla palestra comunale, "
+           "8 utenze",
+    zona_mercato="NORD",
+    zona_tariffa="nord",
+    impianti=(
+        # 90 kW su due tetti, contro ~390 kWh/giorno di consumi: la CER produce nel mese
+        # poco più di quanto consuma (13.339 kWh contro 10.970), che è il dimensionamento
+        # di una configurazione fatta bene. Non è una taglia scelta per centrare un
+        # numero: è quella che serve a coprire i consumi diurni di un supermercato e di
+        # una palestra senza sovradimensionare come fa EQUILIBRATA.
+        Impianto("IT001E0000301A", "M01-market", Decimal("50")),
+        Impianto("IT001E0000302B", "M02-comune", Decimal("40")),
+    ),
+    utenze=(
+        Utenza("IT001E0000303C", "M01-market", "supermercato"),
+        Utenza("IT001E0000304D", "M02-comune", "palestra"),
+        Utenza("IT001E0000305E", "M03-bar", "bar"),
+        Utenza("IT001E0000306F", "M04-studio", "ufficio"),
+        Utenza("IT001E0000307G", "M05-agenzia", "ufficio"),
+        Utenza("IT001E0000308H", "M06", "residenziale"),
+        Utenza("IT001E0000309I", "M07", "residenziale"),
+        Utenza("IT001E0000310L", "M08", "residenziale"),
+    ),
+    # Il comune possiede l'impianto sulla palestra ED è utente della palestra: è un
+    # prosumer che NON è un'impresa, combinazione che nessuno degli altri due scenari
+    # esercita (in CONCENTRATA il prosumer è l'officina, cioè un'impresa). Prende quindi
+    # sia la quota da produttore sia una fetta dell'importo eccedentario, insieme alle
+    # tre famiglie (Regole Operative pag. 41).
+    imprese=frozenset({"M01-market", "M03-bar", "M04-studio", "M05-agenzia"}),
 )
 
 CONCENTRATA = Scenario(
@@ -234,7 +277,9 @@ CONCENTRATA = Scenario(
     imprese=frozenset({"M01-officina", "M02-market"}),
 )
 
-SCENARI = {s.nome: s for s in (EQUILIBRATA, CONCENTRATA)}
+# In ordine di rapporto EC/EI crescente: 0,27 · 0,60 · 0,98. La demo li elabora in
+# quest'ordine, così la tabella di confronto si legge come una scala.
+SCENARI = {s.nome: s for s in (EQUILIBRATA, PAESE, CONCENTRATA)}
 
 
 # --- Generazione e lettura ---------------------------------------------------------

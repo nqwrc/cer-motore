@@ -222,8 +222,10 @@ def test_periodo_senza_immissioni_attraversa_il_motore_a_zero():
     # sollevava "pesi tutti nulli" anche con totale nullo: un mese di impianto fermo
     # faceva esplodere il riparto invece di produrre un rendiconto vuoto.)
     #   fondo gestione = arrotonda(0 * 0,10) = 0 ; residuo 0 → blocchi prod/cons a 0
-    #   pesi produttori {A: 0} e consumatori {X: 0, Y: 0}: tutti nulli, ma il totale da
-    #   distribuire è 0, quindi ogni quota è 0 e l'invariante somma == totale regge.
+    #   pesi produttori {A: 0} e consumatori {X: 0, Y: 0}: tutti nulli. I membri però
+    #   ci sono, quindi dall'8/8/2026 il riparto ripiega sulle quote uguali invece di
+    #   fermarsi (`ripartizione._ripartisci_blocco`); qui non cambia nulla, perché il
+    #   totale da distribuire è 0 e ogni quota resta 0, invariante compreso.
     membri = {
         "A": {"ruolo": "produttore", "impresa": False},
         "X": {"ruolo": "consumatore", "impresa": False},
@@ -240,9 +242,12 @@ def test_periodo_senza_immissioni_attraversa_il_motore_a_zero():
     assert esito["Y"]["quota_consumatore"] == 0
     assert sum(v for d in esito.values() for v in d.values()) == 0
 
-    # Ma un importo da distribuire su pesi tutti nulli resta un errore: non esiste un
-    # criterio per ripartirlo, e inventarne uno silenziosamente sposterebbe denaro.
-    with pytest.raises(ValueError):
+    # Ma per la PRIMITIVA un importo da distribuire su pesi tutti nulli resta un
+    # errore: `ripartisci_centesimi` non sa se i pesi siano energie di membri (dove il
+    # ripiego a quote uguali ha senso) o quote orarie di impianti (dove non ne ha), e
+    # inventare un criterio a quel livello sposterebbe denaro in silenzio. La scelta di
+    # ripiegare la prende `ripartisci`, che sa cos'è un blocco di membri.
+    with pytest.raises(ValueError, match="pesi tutti nulli"):
         ripartisci_centesimi(100, {"X": D(0), "Y": D(0)})
 
 

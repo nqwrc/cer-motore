@@ -1,7 +1,7 @@
 """Rendiconto per membro: dal risultato della ripartizione a un testo leggibile."""
 from decimal import Decimal
 
-from .ripartizione import in_centesimi
+from .ripartizione import FONDO_ECCEDENTARIO, VOCE_FONDI, in_centesimi
 
 
 def _euro(cent: int) -> str:
@@ -103,19 +103,23 @@ def rendiconto_markdown(
         "|---|---|---:|---:|---:|---:|",
     ]
     for m, voci in sorted(esito.items()):
-        if m == "_fondi":
+        if m == VOCE_FONDI:
             continue
         qp, qc, qe = voci.get("quota_produttore", 0), voci.get("quota_consumatore", 0), voci.get("quota_eccedentaria", 0)
         righe.append(
             f"| {m} | {membri[m]['ruolo']} | {_euro(qp)} | {_euro(qc)} | {_euro(qe)} | {_euro(qp + qc + qe)} |"
         )
-    if esito.get("_fondi"):
+    if esito.get(VOCE_FONDI):
         righe += ["", "**Fondi statutari:** " + " · ".join(
-            f"{nome}: {_euro(cent)}" for nome, cent in esito["_fondi"].items())]
+            f"{nome}: {_euro(cent)}" for nome, cent in esito[VOCE_FONDI].items())]
 
+    # `FONDO_ECCEDENTARIO` è un nome riservato (`ripartizione.ripartisci` rifiuta un
+    # fondo statutario omonimo), quindi quello che si legge qui è tutto e solo importo
+    # eccedentario: prima della riserva un fondo di statuto con quel nome ci si sommava
+    # e faceva comparire la nota qui sotto anche su un periodo senza eccedentario.
     eccedentario_cent = sum(
-        voci.get("quota_eccedentaria", 0) for m, voci in esito.items() if m != "_fondi"
-    ) + esito.get("_fondi", {}).get("finalita_sociali", 0)
+        voci.get("quota_eccedentaria", 0) for m, voci in esito.items() if m != VOCE_FONDI
+    ) + esito.get(VOCE_FONDI, {}).get(FONDO_ECCEDENTARIO, 0)
     if eccedentario_cent:
         righe += ["", "*Il vincolo dell'importo eccedentario è qui applicato al singolo "
                   "periodo di calcolo; il GSE lo verifica a conguaglio su base annuale "

@@ -37,31 +37,40 @@ cd cer-motore
 python3 -m venv .venv                                  # su Windows: python -m venv .venv
 ./.venv/bin/python -m pip install -e ".[dev]"          # Windows: .\.venv\Scripts\python.exe
 ./.venv/bin/python -m pytest -q                        # i casi risolti a mano
-./.venv/bin/python -m cer_motore                       # demo end-to-end su due CER mock
+./.venv/bin/python -m cer_motore                       # demo end-to-end su tre CER mock
 ```
 
 La demo genera un mese di misure orarie, calcola energia condivisa, TIP con cap e correttivo
 geografico, valorizzazione ARERA, applica regole statutarie dichiarative (fondi, quote
 produttori/consumatori) e scrive un rendiconto per membro.
 
-Gli scenari mock sono **due, con lo stesso statuto**: cambia solo la configurazione fisica, e
+Gli scenari mock sono **tre, con lo stesso statuto**: cambia solo la configurazione fisica, e
 con essa il rapporto fra energia condivisa ed energia immessa, che è ciò che decide se scatta
 il vincolo dell'importo eccedentario (soglia 55%, `docs/FORMULE.md` §4).
 
 | Scenario | Configurazione | EC/EI | Vincolo eccedentario |
 |---|---|---:|---|
 | `equilibrata` | CER di quartiere: 2 impianti FV (60 e 20 kW), 8 utenze fra case, uffici e un bar | 27,2% | non scatta |
-| `concentrata` | CER artigianale: un FV da 30 kW, un'officina, un supermercato, una palestra comunale e 2 famiglie | 97,6% | scatta: 241,72 € dei 567,16 € di tariffa premio |
+| `paese` | CER di paese: FV da 50 kW sul supermercato e 40 kW sulla palestra comunale, 8 utenze fra negozi, uffici e case | 60,6% | scatta appena: 59,09 € dei 1.050,18 € di tariffa premio, il 5,6% |
+| `concentrata` | CER artigianale: un FV da 30 kW, un'officina, un supermercato, una palestra comunale e 2 famiglie | 97,6% | scatta in pieno: 241,72 € dei 567,16 €, il 42,6% |
 
-Il secondo non è un caso di scuola: con un impianto piccolo davanti a grandi consumatori diurni
+L'ultimo non è un caso di scuola: con un impianto piccolo davanti a grandi consumatori diurni
 il prelievo eccede quasi sempre l'immissione, quindi si condivide quasi tutto ciò che si immette
 — la situazione che il vincolo eccedentario intende intercettare. Lì l'importo eccedentario va
 ai **soli consumatori diversi dalle imprese**: nel rendiconto la colonna corrispondente si
 popola per la palestra comunale e le due famiglie, non per l'officina né per il supermercato.
 
-A video la demo stampa il confronto fra i due e il rendiconto completo di `concentrata`. Tutto
-ciò che scrive sta sotto `data/`: i CSV in `data/<scenario>/`, i rendiconti completi di entrambi
-in `data/rendiconto-<scenario>.md`. Una sola cartella usa-e-getta, da cancellare quando si vuole.
+`paese` sta invece **appena sopra la soglia**, ed è la configurazione più ordinaria delle tre:
+90 kW che coprono i consumi diurni di un supermercato, di una palestra comunale e di qualche
+utenza minore. È la fascia in cui l'errore corretto il 7 agosto 2026 sbagliava di più — lì
+avrebbe assegnato 97,46 € invece di 59,09 €, +65% — e in cui uno sbaglio del genere passa
+inosservato, perché l'importo è piccolo e nessun numero appare assurdo. Il rapporto resta fra
+0,596 e 0,606 su tutti e dodici i mesi del 2026, non solo su quello della demo.
+
+A video la demo stampa il confronto fra i tre e **un solo rendiconto per esteso**, quello di
+`concentrata`: tre rendiconti sarebbero un muro di testo. Tutto ciò che scrive sta sotto
+`data/`: i CSV in `data/<scenario>/`, i rendiconti completi di tutti e tre in
+`data/rendiconto-<scenario>.md`. Una sola cartella usa-e-getta, da cancellare quando si vuole.
 
 ## Principi
 

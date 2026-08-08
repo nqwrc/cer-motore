@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from cer_motore.regole import ErroreRegole, da_testo, leggi, valida
+from cer_motore.ripartizione import FONDO_ECCEDENTARIO
 from cer_motore.ripartizione import ripartisci
 
 ESEMPIO = Path(__file__).resolve().parent.parent / "regole-esempio.toml"
@@ -540,3 +541,27 @@ def test_errore_regole_e_un_value_error():
     assert issubclass(ErroreRegole, ValueError)
     with pytest.raises(ValueError):
         da_testo("")
+
+
+def test_errore_fondo_con_nome_riservato():
+    # "finalita_sociali" e il nome piu naturale che uno statuto italiano dia al fondo
+    # delle finalita sociali, ed e proprio la voce in cui `ripartisci` deposita
+    # l'importo eccedentario quando non ci sono consumatori diversi dalle imprese cui
+    # destinarlo (Regole Operative pag. 41). I due importi si sommerebbero in una riga
+    # sola del rendiconto, senza che l'invariante di somma se ne accorga.
+    #
+    # Il rifiuto sta QUI e non solo in `ripartisci` perche il conflitto lo produrra
+    # chi scrive il TOML, e va detto mentre ha il file dello statuto aperto davanti:
+    # da `ripartisci` arriverebbe un errore che non nomina ne il file ne la riga.
+    testo = messaggio(BASE + f'\n[fondi]\n{FONDO_ECCEDENTARIO} = "0.05"\n')
+    assert "è un nome riservato" in testo
+    assert FONDO_ECCEDENTARIO in testo
+    assert "fondo_sociale" in testo  # il messaggio propone un'alternativa concreta
+
+
+def test_un_fondo_dal_nome_simile_a_quello_riservato_passa():
+    # La riserva e su uguaglianza esatta, non su prefisso o somiglianza: uno statuto
+    # che chiama il proprio fondo in un modo vicino non deve essere rifiutato.
+    for nome in ("fondo_sociale", "finalita_sociali_statutario", "sociali", "Finalita_sociali"):
+        regole = da_testo(BASE + f'\n[fondi]\n{nome} = "0.05"\n')
+        assert regole["fondi"][nome] == D("0.05")

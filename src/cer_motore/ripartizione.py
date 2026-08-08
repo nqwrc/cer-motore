@@ -4,10 +4,16 @@ La ripartizione interna è materia statutaria (Regole Operative: serve un "sogge
 delegato responsabile del riparto"). Qui è modellata con regole dichiarative.
 Tutti gli importi viaggiano in CENTESIMI (int); l'invariante somma == totale è
 garantito dal metodo del resto maggiore. Vedi docs/FORMULE.md §4-5.
+
+Due cose che l'invariante di somma NON protegge, e che qui sono protette a parte:
+il denaro può finire nella voce sbagliata senza che il totale se ne accorga (di qui i
+nomi riservati `VOCE_FONDI` e `FONDO_ECCEDENTARIO`), e l'aritmetica `Decimal` dipende
+dal contesto del chiamante, che è stato globale e mutabile (di qui `CONTESTO`).
 """
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Context, Decimal, ROUND_HALF_UP, localcontext
+from functools import wraps
 
 # I valori soglia del vincolo eccedentario sono parametri normativi e stanno con gli
 # altri in tariffe.py (CLAUDE.md, regola 4), non qui.
@@ -16,11 +22,128 @@ from .tariffe import (
     SOGLIA_ECCEDENTARIO_SOLA_TARIFFA,
 )
 
+# --- l'aritmetica del motore non dipende dal contesto del chiamante ----------------
 
+CONTESTO = Context(prec=28)
+"""Contesto decimale del motore: 28 cifre significative e trap attive.
+
+Questo modulo si dichiara puro e senza stato, ma l'aritmetica `Decimal` legge
+precisione, arrotondamento e trap dal contesto del CHIAMANTE, che è stato globale e
+mutabile (`decimal.localcontext`). Misurato l'8 ago 2026 sul codice senza questa
+costante, dentro un `localcontext(Context(prec=5))`:
+
+    quota_produttori 0,500001 + quota_consumatori 0,5 = 1,000001, ma la somma
+    arrotondata a 5 cifre dà 1,0000: la guardia `qp + qc != 1` NON scatta e uno statuto
+    malformato passa. Non si perde denaro — il resto maggiore normalizza sui pesi e
+    distribuisce comunque il residuo esatto — ma la stessa CER, ripartita da due
+    programmi con precisione diversa, ottiene dall'uno un errore e dall'altro un
+    riparto;
+    due fondi allo 0,999999 e allo 0,000002 sommano a 1,000001 e passano allo stesso
+    modo la guardia `somma > 1`.
+
+E con le trap disattivate (`Context(traps=[])`, che un chiamante può benissimo
+impostare) `Decimal("NaN") < 0` non solleva più nulla: restituisce False, quindi ogni
+guardia scritta come confronto lascia passare NaN in silenzio.
+
+Le funzioni pubbliche del modulo si eseguono perciò in una COPIA di questo contesto,
+non in quello ambientale. 28 cifre sono la precisione di default di CPython: il
+comportamento storico non cambia di un centesimo (i rendiconti della demo restano
+identici byte per byte), cambia che ora è una scelta dichiarata invece di un'eredità.
+Il limite resta quello di qualunque precisione finita: due percentuali con più di 28
+cifre significative possono ancora sommare a 1 per arrotondamento. Nessuno statuto
+scrive una percentuale con 29 cifre.
+"""
+
+
+def _nel_contesto_del_motore(funzione: Callable) -> Callable:
+    """Esegue la funzione in una copia di `CONTESTO`, qualunque sia quello ambientale.
+
+    `localcontext(ctx)` installa una COPIA di `ctx`: i flag alzati durante il calcolo
+    non si accumulano sulla costante di modulo, e il contesto del chiamante viene
+    ripristinato all'uscita. La purezza vale quindi in entrambi i versi — il motore non
+    legge lo stato globale e non lo sporca.
+    """
+
+    @wraps(funzione)
+    def avvolta(*args, **kwargs):
+        with localcontext(CONTESTO):
+            return funzione(*args, **kwargs)
+
+    return avvolta
+
+
+# --- nomi riservati nel risultato della ripartizione -------------------------------
+
+VOCE_FONDI = "_fondi"
+"""Chiave del risultato di `ripartisci` che raccoglie i fondi: NON è un membro.
+
+Nessun membro può chiamarsi così, e `ripartisci` lo rifiuta. Il risultato è un dict
+piatto {nome: {voce: centesimi}} in cui i fondi occupano una chiave come tutti gli
+altri: un socio con questo identificativo ci finiva dentro e il rendiconto diventava
+falso senza che nulla protestasse (vedi la guardia in `ripartisci`).
+"""
+
+FONDO_ECCEDENTARIO = "finalita_sociali"
+"""Voce di fondo in cui `ripartisci` deposita l'importo eccedentario senza idonei.
+
+Regole Operative pag. 41: l'importo eccedentario va ai soli consumatori diversi dalle
+imprese e/o a finalità sociali sui territori degli impianti. Nome riservato: un fondo
+statutario omonimo si fonderebbe con questo importo in una riga sola.
+"""
+
+# --- vocabolario chiuso di ruoli e criteri -----------------------------------------
+#
+# Stanno qui, e non in regole.py, perché è questo modulo a consumarli: `regole.py` li
+# importa per validare lo statuto al confine. Due elenchi che possono divergere sono
+# un elenco solo scritto male.
+#
+# Sono vocabolari CHIUSI apposta. Un ruolo o un criterio non riconosciuto non solleva
+# niente da sé — il socio semplicemente non entra in nessun blocco, il criterio ignoto
+# cade nel ramo di default — e il denaro finisce a qualcun altro senza che l'invariante
+# di somma se ne accorga.
+
+RUOLI = ("produttore", "consumatore", "prosumer")
+"""Ruoli ammessi in anagrafica. Il prosumer sta in ENTRAMBI i blocchi e prende due quote."""
+
+CRITERI_PRODUTTORI = ("energia_immessa", "quote_uguali")
+"""Criteri di riparto dentro il blocco produttori."""
+
+CRITERI_CONSUMATORI = ("prelievo_coincidente", "quote_uguali")
+"""Criteri di riparto dentro il blocco consumatori."""
+
+
+def _elenco(voci: Sequence[str]) -> str:
+    """Elenco leggibile per i messaggi d'errore: "a", "b" o "c"."""
+    virgolette = [f"{v!r}" for v in voci]
+    if len(virgolette) < 2:
+        return "".join(virgolette)
+    return ", ".join(virgolette[:-1]) + " o " + virgolette[-1]
+
+
+def _criterio(regole: dict, chiave: str, default: str, ammessi: Sequence[str]) -> str:
+    """Legge un criterio dalle regole statutarie e lo valida contro il vocabolario.
+
+    Senza questo controllo un criterio inesistente non veniva rifiutato: cadeva nel
+    ramo "non è quote_uguali" e ripartiva pro-quota energia, cioè dava una risposta
+    plausibile a una domanda che nessuno aveva posto.
+    """
+    valore = regole.get(chiave, default)
+    if valore not in ammessi:
+        raise ValueError(
+            f"{chiave}: {valore!r} non è un criterio supportato; il motore conosce "
+            f"{_elenco(ammessi)}. Un criterio non riconosciuto non verrebbe segnalato "
+            "dal calcolo: ripartirebbe con quello di default, e il rendiconto "
+            "sembrerebbe corretto."
+        )
+    return valore
+
+
+@_nel_contesto_del_motore
 def in_centesimi(euro: Decimal) -> int:
     return int((euro * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+@_nel_contesto_del_motore
 def ripartisci_centesimi(totale_cent: int, pesi: dict[str, Decimal]) -> dict[str, int]:
     """Ripartisce un importo in centesimi in proporzione ai pesi, senza perdere un cent.
 
@@ -34,7 +157,10 @@ def ripartisci_centesimi(totale_cent: int, pesi: dict[str, Decimal]) -> dict[str
 
     Un totale nullo si ripartisce in quote nulle anche se i pesi sono tutti nulli (è il
     caso del periodo senza immissioni); pesi tutti nulli con un totale da distribuire
-    sono invece un errore, perché non esiste un criterio per ripartirlo.
+    sono invece un errore, perché non esiste un criterio per ripartirlo. Questa
+    primitiva non ripiega su nulla, e non potrebbe: non sa se i pesi siano energie di
+    membri o quote orarie di impianti. Chi lo sa è `_ripartisci_blocco`, che davanti a
+    un blocco di membri tutti a peso nullo sceglie le quote uguali.
     """
     tot_pesi = sum(pesi.values())
     if tot_pesi == 0:
@@ -112,6 +238,7 @@ def _valida_eccedentario(
         )
 
 
+@_nel_contesto_del_motore
 def scomponi_eccedentario(
     importo_tip_cent: int,
     ec_tot_kwh: Decimal,
@@ -231,6 +358,7 @@ class InsiemeIncentivato:
                    SOGLIA_ECCEDENTARIO_CUMULO_CONTO_CAPITALE)
 
 
+@_nel_contesto_del_motore
 def scomponi_eccedentario_insiemi(
     insiemi: Sequence[InsiemeIncentivato],
 ) -> tuple[int, int]:
@@ -294,6 +422,138 @@ def scomponi_eccedentario_insiemi(
     return base_tot, ecc_tot
 
 
+# --- validazione delle regole statutarie e dei pesi dei blocchi -------------------
+
+
+def _euro(cent: int) -> str:
+    return f"{Decimal(cent) / 100:.2f} €"
+
+
+def _descrivi(valore: object) -> str:
+    """Tipo del valore in italiano: i messaggi li legge un socio, non un compilatore."""
+    nomi = {
+        str: "un testo",
+        float: "un numero decimale binario (float)",
+        bool: "un valore vero/falso",
+        list: "un elenco",
+        dict: "una tabella",
+    }
+    return nomi.get(type(valore), f"di tipo {type(valore).__name__}")
+
+
+def _percentuale(valore: object, chiave: str) -> Decimal:
+    """Percentuale statutaria: `Decimal` (o intero) e FINITA. Mai float, mai testo.
+
+    `regole.valida` fa già questi controlli sul file TOML, ma `ripartisci` è pubblica e
+    viene chiamata anche con dizionari costruiti a mano — dai test, e domani da un
+    adapter o da un'interfaccia. Misurato l'8 ago 2026 senza questa funzione:
+
+        fondi={"gestione": Decimal("NaN")}  -> decimal.InvalidOperation
+        quota_produttori=Decimal("NaN")     -> decimal.InvalidOperation
+        quota_produttori="0.5"              -> TypeError
+        fondi={"gestione": 0.1}             -> TypeError
+
+    Nessuno dei quattro è `ValueError`, che è il tipo su cui il resto del motore ha
+    insegnato ai chiamanti a contare (`InvalidOperation` è `ArithmeticError`), e
+    `Decimal("NaN") < 0` non fa scattare nessuna delle guardie scritte come confronto:
+    NaN non è né minore né maggiore di niente. Il docstring di `ripartisci` prometteva
+    una validazione "prima di qualunque conto" che su questi quattro casi non c'era.
+    """
+    if isinstance(valore, bool) or not isinstance(valore, (int, Decimal)):
+        raise ValueError(
+            f"{chiave}: {valore!r} non è una percentuale utilizzabile sul denaro, è "
+            f"{_descrivi(valore)}. Le percentuali statutarie sono Decimal (o interi "
+            'esatti): un float non rappresenta 0,10 — arriverebbe come '
+            "0,1000000000000000055511151231257827… — e un testo non è un numero. Nel "
+            'codice si scrivono Decimal("0.10"), nel file delle regole fra virgolette, '
+            '`gestione = "0.10"` (docs/REGOLE.md).'
+        )
+    numero = Decimal(valore)
+    if not numero.is_finite():
+        raise ValueError(
+            f"{chiave}: {numero} non è un numero finito. Attesa una frazione di 1, per "
+            'esempio Decimal("0.10") per il 10%. NaN e Infinity vanno fermati qui, ma '
+            "per ragioni opposte: Infinity supera i confronti delle guardie senza "
+            "farli scattare (Infinity < 0 è False), mentre NaN li fa esplodere con "
+            "InvalidOperation, che è ArithmeticError e non ValueError. Uno passa, "
+            "l'altro esce dalla porta sbagliata, e nessuno dei due dice quale regola "
+            "statutaria correggere."
+        )
+    return numero
+
+
+def _ripartisci_blocco(
+    blocco: str,
+    totale_cent: int,
+    ids: list[str],
+    criterio: str,
+    energie: dict[str, Decimal],
+    rimedio: str,
+) -> dict[str, int]:
+    """Ripartisce la dotazione di un blocco fra i suoi membri. Decide i due casi limite.
+
+    Le due situazioni in cui il criterio statutario non produce un riparto sono
+    DIVERSE, e fino all'8 ago 2026 finivano nello stesso `ValueError("pesi tutti
+    nulli")` sollevato dalle viscere di `ripartisci_centesimi`, che non nominava né il
+    blocco né il criterio — mentre il ramo dell'importo eccedentario, davanti allo
+    stesso problema, ripiegava in silenzio sulle quote uguali. Quell'asimmetria non era
+    una decisione, era un caso: ora i tre blocchi passano tutti di qui.
+
+    BLOCCO SENZA MEMBRI E CON DENARO DA DISTRIBUIRE: errore. Non è il criterio a
+    mancare, sono i destinatari: nessun ripiego può inventare a chi pagare, e tacere
+    significherebbe far sparire quel denaro dal rendiconto. Il messaggio dice quanto,
+    quale blocco e come si corregge lo statuto.
+
+    MEMBRI PRESENTI MA PESI TUTTI NULLI: quote uguali. Qui i destinatari ci sono, è il
+    criterio a non saperli distinguere — un mese in cui nessun produttore ha immesso, o
+    in cui l'energia condivisa è nulla e quindi lo sono tutti i contributi di prelievo
+    coincidente. Dividere in parti uguali è la scelta meno arbitraria fra quelle
+    possibili, ed è già il comportamento del ramo eccedentario. NON è una regola GSE:
+    la ripartizione interna è materia statutaria (docs/FORMULE.md §5), e uno statuto che
+    voglia un'altra risposta può dichiarare `quote_uguali` come criterio o azzerare la
+    quota del blocco.
+
+    Un blocco senza membri e senza denaro non è un problema: non ripartisce nulla.
+    """
+    if not ids:
+        if totale_cent == 0:
+            return {}
+        raise ValueError(
+            f"blocco {blocco}: ci sono {totale_cent} centesimi da ripartire "
+            f"({_euro(totale_cent)}) ma non c'è nessun membro con quel ruolo, quindi "
+            f"quel denaro non ha destinatario e nessun criterio può inventarne uno "
+            f"(criterio dichiarato: {criterio!r}). {rimedio}"
+        )
+    if criterio == "quote_uguali":
+        return ripartisci_centesimi(totale_cent, {m: Decimal(1) for m in ids})
+
+    pesi: dict[str, Decimal] = {}
+    for m in ids:
+        peso = energie.get(m, Decimal(0))
+        if isinstance(peso, Decimal) and not peso.is_finite():
+            raise ValueError(
+                f"blocco {blocco}: il peso di {m!r} non è un numero finito ({peso}). "
+                f"Con il criterio {criterio!r} il peso è un'energia in kWh: Infinity "
+                "attraverserebbe la guardia sul segno senza farla scattare, e "
+                "azzererebbe la quota di tutti gli altri membri del blocco; NaN la "
+                "farebbe esplodere con InvalidOperation invece che con ValueError."
+            )
+        if peso < 0:
+            raise ValueError(
+                f"blocco {blocco}: {m!r} ha un peso negativo ({peso} kWh) con il "
+                f"criterio {criterio!r}. Riceverebbe una quota negativa, cioè "
+                "pagherebbe per gli altri membri, e l'invariante somma == totale "
+                "reggerebbe lo stesso perché è una somma. Le energie misurate non sono "
+                "mai negative: probabilmente il segno arriva da un adapter."
+            )
+        pesi[m] = peso
+
+    if all(peso == 0 for peso in pesi.values()):
+        pesi = {m: Decimal(1) for m in ids}
+    return ripartisci_centesimi(totale_cent, pesi)
+
+
+@_nel_contesto_del_motore
 def ripartisci(
     regole: dict,
     importo_base_cent: int,
@@ -313,70 +573,156 @@ def ripartisci(
 
     `membri`: {id: {"ruolo": "produttore"|"consumatore"|"prosumer", "impresa": bool}}.
     L'eccedentario va solo ai consumatori con impresa=False (vincolo Regole Operative);
-    se non ce ne sono, resta in un fondo "finalita_sociali".
+    se non ce ne sono, resta nel fondo `FONDO_ECCEDENTARIO`.
 
-    Le regole statutarie sono validate prima di qualunque conto: percentuali dei fondi
-    non negative e di somma ≤ 1, quote dei blocchi non negative e di somma esattamente
-    1, importi non negativi. Fino al 7 ago 2026 si controllava solo `qp + qc == 1`, e
-    quindi `quota_produttori=1,5` con `quota_consumatori=−0,5` passava e assegnava ai
-    consumatori una quota NEGATIVA (con l'invariante finale, che è una somma, comunque
-    soddisfatto: un membro pagava per gli altri).
+    Le regole statutarie e i membri sono validati prima di qualunque conto: percentuali
+    dei fondi e quote dei blocchi finite, non negative, di somma ≤ 1 le prime ed
+    esattamente 1 le seconde; importi non negativi; nessun nome riservato. Fino al 7 ago
+    2026 si controllava solo `qp + qc == 1`, e quindi `quota_produttori=1,5` con
+    `quota_consumatori=−0,5` passava e assegnava ai consumatori una quota NEGATIVA (con
+    l'invariante finale, che è una somma, comunque soddisfatto: un membro pagava per gli
+    altri).
+
+    DUE NOMI SONO RISERVATI, e vengono rifiutati invece che accettati in silenzio. Il
+    risultato è un dict piatto in cui i fondi occupano una chiave accanto ai membri, e i
+    fondi sono a loro volta un dict di nomi liberi: due collisioni erano possibili, e
+    l'8 ago 2026 sono state misurate entrambe. Nessuna delle due viola l'invariante
+    finale — è una somma, e una somma non si accorge di dove sono finiti gli addendi —
+    quindi nessuna guardia se ne accorgeva: il rendiconto mentiva e basta.
+
+        un membro chiamato `_fondi`: la sua quota (1500 centesimi nella misura)
+        finiva dentro il dizionario dei fondi, stampata nel rendiconto come una voce di
+        fondo, e la riga del socio spariva dalla tabella;
+        un fondo statutario chiamato `finalita_sociali`: 1000 centesimi statutari e 500
+        di importo eccedentario senza consumatori idonei diventavano una riga sola da
+        1500, e la nota di fondo pagina sull'eccedentario ne contava 1500 invece di 500.
+
+    Il fondo riservato è rifiutato SEMPRE, anche nei periodi in cui l'importo
+    eccedentario è nullo e la collisione non si produrrebbe: uno statuto è valido o no
+    di suo, e scoprire il conflitto al primo mese in cui il vincolo scatta significa
+    scoprirlo mentre si sposta denaro.
     """
     if importo_base_cent < 0 or importo_eccedentario_cent < 0:
-        raise ValueError("gli importi da ripartire non possono essere negativi")
+        raise ValueError(
+            f"gli importi da ripartire non possono essere negativi: importo base "
+            f"{importo_base_cent} centesimi, importo eccedentario "
+            f"{importo_eccedentario_cent}. Un incentivo negativo non esiste, e "
+            "ripartirlo farebbe pagare i soci."
+        )
+
+    if VOCE_FONDI in membri:
+        raise ValueError(
+            f"c'è un membro con identificativo {VOCE_FONDI!r}, che è un nome riservato: "
+            "nel risultato della ripartizione è la voce che raccoglie i fondi "
+            "statutari. La quota di quel socio finirebbe fra i fondi e il rendiconto la "
+            "stamperebbe come un fondo invece che come la sua riga, senza che nulla "
+            "protesti, perché il totale torna lo stesso. Dài al membro un altro "
+            "identificativo, per esempio il suo codice POD."
+        )
 
     esito: dict[str, dict] = {m: {} for m in membri}
-    esito["_fondi"] = {}
+    esito[VOCE_FONDI] = {}
 
     # 1. fondi statutari sul totale base
-    fondi = regole.get("fondi", {})
+    fondi = {
+        nome: _percentuale(perc, f"fondi.{nome}")
+        for nome, perc in regole.get("fondi", {}).items()
+    }
+    if FONDO_ECCEDENTARIO in fondi:
+        raise ValueError(
+            f"c'è un fondo statutario chiamato {FONDO_ECCEDENTARIO!r}, che è un nome "
+            "riservato: è la voce in cui finisce l'importo eccedentario quando nella "
+            "CER non ci sono consumatori diversi dalle imprese (Regole Operative "
+            "pag. 41). I due importi si sommerebbero in una riga sola del rendiconto e "
+            "non si distinguerebbe più quanto viene dallo statuto e quanto dal vincolo "
+            "normativo, che ha una destinazione obbligata. Chiama il fondo statutario "
+            "in un altro modo, per esempio 'sociale' o 'finalita_sociali_statutario'."
+        )
     for nome, perc in fondi.items():
         if perc < 0:
-            raise ValueError(f"la percentuale del fondo {nome!r} è negativa ({perc})")
-    if sum(fondi.values(), Decimal(0)) > 1:
+            raise ValueError(
+                f"la percentuale del fondo {nome!r} è negativa ({perc}): un fondo "
+                "negativo non restituisce denaro ai soci, lo crea dal nulla, e il "
+                "riparto distribuirebbe più di quanto la CER ha incassato."
+            )
+    somma_fondi = sum(fondi.values(), Decimal(0))
+    if somma_fondi > 1:
         raise ValueError(
-            f"le percentuali dei fondi sommano a {sum(fondi.values(), Decimal(0))}: "
+            f"le percentuali dei fondi sommano a {somma_fondi}: "
             "oltre 1 lascerebbero ai membri un residuo negativo"
         )
     residuo = importo_base_cent
     for nome, perc in fondi.items():
         q = int((Decimal(importo_base_cent) * perc).quantize(Decimal(1), ROUND_HALF_UP))
-        esito["_fondi"][nome] = q
+        esito[VOCE_FONDI][nome] = q
         residuo -= q
     if residuo < 0:
         # Le percentuali passano la guardia ma i singoli arrotondamenti al centesimo
         # sfondano il totale: succede solo con percentuali che sommano quasi a 1 e
         # importi di pochi centesimi (0.01 € diviso in due fondi da 0,5 dà 1 + 1 = 2).
         raise ValueError(
-            f"i fondi arrotondati superano l'importo base di {-residuo} centesimi"
+            f"i fondi arrotondati superano l'importo base di {-residuo} centesimi: "
+            f"su {importo_base_cent} centesimi da ripartire i fondi ne trattengono "
+            f"{importo_base_cent - residuo} e ai membri resterebbe un residuo negativo. "
+            "Le percentuali sommano a 1 o quasi, e su importi di pochi centesimi ogni "
+            "arrotondamento vale più della differenza."
         )
 
     # 2. residuo diviso tra blocco produttori e blocco consumatori
-    qp = regole.get("quota_produttori", Decimal("0.5"))
-    qc = regole.get("quota_consumatori", Decimal("0.5"))
+    qp = _percentuale(regole.get("quota_produttori", Decimal("0.5")), "quota_produttori")
+    qc = _percentuale(regole.get("quota_consumatori", Decimal("0.5")), "quota_consumatori")
     if qp < 0 or qc < 0:
         raise ValueError(
             f"quota_produttori ({qp}) e quota_consumatori ({qc}) non possono essere "
             "negative: sommerebbero comunque a 1 ma darebbero quote negative ai membri"
         )
     if qp + qc != 1:
-        raise ValueError("quota_produttori + quota_consumatori deve fare 1")
+        raise ValueError(
+            f"le quote dei blocchi non chiudono: quota_produttori ({qp}) + "
+            f"quota_consumatori ({qc}) fanno {qp + qc}, devono fare esattamente 1. "
+            "Tutto il residuo dopo i fondi va ripartito: per trattenerne una parte si "
+            "aggiunge un fondo in [fondi], non si abbassano le quote."
+        )
     blocco = ripartisci_centesimi(residuo, {"prod": qp, "cons": qc})
+
+    # I ruoli si validano PRIMA di selezionare i blocchi. Un ruolo scritto male non
+    # solleva niente da sé: il socio semplicemente non entra in nessuna delle due liste,
+    # resta con un esito vuoto, e la sua quota viene ripartita fra gli altri. Misurato:
+    # con "consumatori" al posto di "consumatore", C2 riceve {} e i suoi 4500 centesimi
+    # finiscono a C1. L'invariante di somma regge — il denaro non sparisce, cambia solo
+    # tasca — quindi nessuna guardia a valle se ne accorge. È un errore silenzioso che
+    # sposta denaro fra i soci, la cosa peggiore che questo modulo possa fare.
+    for m, d in membri.items():
+        if "ruolo" not in d:
+            raise ValueError(
+                f"membro {m!r}: manca la chiave 'ruolo'. Attesa una fra "
+                f"{_elenco(RUOLI)}, insieme a 'impresa' (vero o falso)."
+            )
+        if d["ruolo"] not in RUOLI:
+            raise ValueError(
+                f"membro {m!r}: ruolo {d['ruolo']!r} sconosciuto; attesa una fra "
+                f"{_elenco(RUOLI)}. Un ruolo non riconosciuto non fa entrare il socio "
+                "in nessun blocco: resterebbe senza quota, e la sua parte andrebbe "
+                "agli altri senza che nulla lo segnali."
+            )
 
     produttori = [m for m, d in membri.items() if d["ruolo"] in ("produttore", "prosumer")]
     consumatori = [m for m, d in membri.items() if d["ruolo"] in ("consumatore", "prosumer")]
+    criterio_prod = _criterio(regole, "criterio_produttori", "energia_immessa", CRITERI_PRODUTTORI)
+    criterio_cons = _criterio(regole, "criterio_consumatori", "prelievo_coincidente", CRITERI_CONSUMATORI)
 
-    def pesi(ids: list[str], criterio: str, energie: dict[str, Decimal]) -> dict[str, Decimal]:
-        if criterio == "quote_uguali":
-            return {m: Decimal(1) for m in ids}
-        return {m: energie.get(m, Decimal(0)) for m in ids}
-
-    for m, cent in ripartisci_centesimi(
-        blocco["prod"], pesi(produttori, regole.get("criterio_produttori", "energia_immessa"), energia_immessa_kwh)
+    for m, cent in _ripartisci_blocco(
+        "produttori", blocco["prod"], produttori, criterio_prod, energia_immessa_kwh,
+        rimedio="Se la CER non ha membri che immettono energia, lo statuto deve dirlo: "
+                'quote.produttori = "0" e quote.consumatori = "1" (docs/REGOLE.md). '
+                "Altrimenti manca dall'anagrafica chi ha ruolo 'produttore' o 'prosumer'.",
     ).items():
         esito[m]["quota_produttore"] = cent
-    for m, cent in ripartisci_centesimi(
-        blocco["cons"], pesi(consumatori, regole.get("criterio_consumatori", "prelievo_coincidente"), contributi_consumo_kwh)
+    for m, cent in _ripartisci_blocco(
+        "consumatori", blocco["cons"], consumatori, criterio_cons, contributi_consumo_kwh,
+        rimedio="Se la CER non ha membri che consumano, lo statuto deve dirlo: "
+                'quote.consumatori = "0" e quote.produttori = "1" (docs/REGOLE.md). '
+                "Altrimenti manca dall'anagrafica chi ha ruolo 'consumatore' o 'prosumer'.",
     ).items():
         esito[m]["quota_consumatore"] = cent
 
@@ -384,15 +730,23 @@ def ripartisci(
     if importo_eccedentario_cent:
         idonei = [m for m in consumatori if not membri[m].get("impresa")]
         if idonei:
-            p = pesi(idonei, regole.get("criterio_consumatori", "prelievo_coincidente"), contributi_consumo_kwh)
-            if sum(p.values()) == 0:
-                p = {m: Decimal(1) for m in idonei}
-            for m, cent in ripartisci_centesimi(importo_eccedentario_cent, p).items():
+            # Stesso percorso degli altri due blocchi, ripiego a quote uguali compreso:
+            # era la sola strada che ci ripiegava, ed è da lì che la decisione è stata
+            # presa per tutti (vedi `_ripartisci_blocco`).
+            for m, cent in _ripartisci_blocco(
+                "eccedentario", importo_eccedentario_cent, idonei, criterio_cons,
+                contributi_consumo_kwh,
+                rimedio="Senza consumatori diversi dalle imprese l'importo eccedentario "
+                        f"va al fondo {FONDO_ECCEDENTARIO!r}, non a questo blocco: se "
+                        "leggi questo messaggio la lista degli idonei è stata costruita "
+                        "male.",
+            ).items():
                 esito[m]["quota_eccedentaria"] = cent
         else:
-            esito["_fondi"]["finalita_sociali"] = (
-                esito["_fondi"].get("finalita_sociali", 0) + importo_eccedentario_cent
-            )
+            # Nessun consumatore diverso dalle imprese: il nome del fondo è riservato,
+            # quindi questa voce non può fondersi con un fondo statutario omonimo e nel
+            # rendiconto la provenienza dell'importo resta leggibile.
+            esito[VOCE_FONDI][FONDO_ECCEDENTARIO] = importo_eccedentario_cent
 
     totale = importo_base_cent + importo_eccedentario_cent
     assert sum(v for d in esito.values() for v in d.values()) == totale
