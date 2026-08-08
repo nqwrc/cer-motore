@@ -81,8 +81,31 @@ privato `personal-archive`): un estraneo installa e ottiene un risultato utile i
    scrivere il parser e declassare il mock a fixture di test. Dipende da un contatto CER (nota
    di verifica del mercato nel repo privato `personal-archive`,
    `piano-lavorativo-nicola/opensource-impatto/06-verifica-cancello-cer.md`).
-10. **CI GitHub Actions** (pytest su 3.11/3.12/3.13, Linux+Windows), badge nel README,
-    CONTRIBUTING, SECURITY.md, semver + CHANGELOG — standard Fase 3 della roadmap personale.
+10. ~~**Pubblicazione e infrastruttura di progetto**~~ — *fatto 8 agosto 2026*, dopo lo
+    spostamento del progetto in un repository proprio su
+    <https://github.com/nqwrc/cer-motore>.
+    - **Licenza MIT.** Il repo era pubblico dichiarando MIT in README e `pyproject.toml`
+      ma senza il file: senza `LICENSE` il default legale è "tutti i diritti riservati" e
+      nessuno può usare il codice. Ora GitHub riconosce `MIT`, e la licenza è nei metadati
+      del pacchetto in forma PEP 639 (`license = "MIT"` + `license-files`), che richiede
+      `setuptools >= 77`.
+    - **CI GitHub Actions**, 6 job: Ubuntu e Windows per Python 3.11, 3.12 e 3.13, con
+      install, suite e smoke test della demo su ognuno. Verde al primo giro. Windows non è
+      simmetria: è l'unico sistema dove viene eseguito il ramo che riconfigura `sys.stdout`,
+      senza il quale la demo morirebbe con `UnicodeEncodeError` su una console cp850 o
+      cp437. Nessun passo di lint: il progetto non ha un formattatore concordato, e una CI
+      che boccia su regole mai decise scoraggia i contributi.
+    - **Badge** nel README, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, classifier e
+      `[project.urls]` in `pyproject.toml`, description e topics del repo.
+    - `CLAUDE.md` **non è più tracciato**: conteneva il contesto strategico del progetto e
+      resta locale. Le regole vincolanti per chi contribuisce sono in `CONTRIBUTING.md`, i
+      punti normativi aperti in `FORMULE.md`.
+
+    Resta dentro questo punto, da decidere: **nessun tag semver** è stato creato, e la
+    versione `0.0.1` vive in `pyproject.toml` e in `__init__.py` senza essere dichiarata nel
+    CHANGELOG. E la **segnalazione privata di GitHub è disattivata** su questo repository:
+    `SECURITY.md` oggi lo dice esplicitamente, ma se la si abilita (Settings > Code
+    security) il documento va rimesso a indicarla.
 11. **Uno scenario mock nella fascia critica 0,55–0,70.** I due scenari attuali stanno a
     0,272 e 0,976, cioè lontanissimi dalla soglia da entrambi i lati. Il bug più costoso
     che il progetto abbia trovato — la frazione al posto della differenza in punti
