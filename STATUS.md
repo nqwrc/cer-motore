@@ -12,7 +12,14 @@ a second number here would duplicate it worse. Declared deviation from the 1-3 K
 ## now
 Spike / pre-v0.1 calculation engine for Italian energy communities (CER) on documented mock
 GSE data, formulas verified verbatim against the GSE rules and ARERA TIAD (184 test
-functions). 14 of 15 roadmap items closed; pause lifted per maintainer decision, work resumed.
+functions). 14 of 15 roadmap items closed. Install gate verified 2026-08-20 on a fresh
+public clone (Windows, Python 3.13), README path followed verbatim: clone+venv+install+
+tests+demo in ~32 s against the 15-minute gate, 184 tests green, demo writes the twelve
+expected files under data/. Doc drift reconciled: ROADMAP item 10's residuals were both
+already resolved (single-source version policy in CHANGELOG; private vulnerability
+reporting enabled), and SECURITY.md no longer claims the factor-F partition is missing
+(item 13 shipped it). Item 9 (real GSE export adapter) remains the only open item,
+blocked on a file from a CER, not on this repo.
 
 ## backlog
 - see docs/ROADMAP.md and the repo's open issues for the technical backlog

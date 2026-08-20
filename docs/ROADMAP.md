@@ -14,6 +14,13 @@ Quattordici voci su quindici sono chiuse. Resta la sola che non dipende da noi:
   [`ADAPTER-GSE.md`](ADAPTER-GSE.md), insieme alle domande a cui solo un file vero può
   rispondere: la voce resta aperta, ma è pronta da chiudere in una sessione.
 
+Il gate d'installazione, invece, è **verificato il 20 agosto 2026** su un clone pubblico
+fresco (Windows, con Python 3.13 già installato e cache pip calda: chi parte davvero da
+zero aggiunge i propri download), percorso del README eseguito alla lettera: clone 1,4 s,
+venv 8,7 s, install 17,5 s, suite 184 test verdi in 3,9 s, demo 0,4 s con i dodici file
+attesi sotto `data/`. Trentadue secondi contro i quindici minuti del gate: a tenere aperta
+la v0.1 resta la voce 9, non l'esperienza di installazione.
+
 L'elenco numerato qui sotto è cronologico e le voci sono citate per numero dal codice e
 dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si è imparato.
 
@@ -118,11 +125,13 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
       resta locale. Le regole vincolanti per chi contribuisce sono in `CONTRIBUTING.md`, i
       punti normativi aperti in `FORMULE.md`.
 
-    Resta dentro questo punto, da decidere: **nessun tag semver** è stato creato, e la
-    versione `0.0.1` vive in `pyproject.toml` e in `__init__.py` senza essere dichiarata nel
-    CHANGELOG. E la **segnalazione privata di GitHub è disattivata** su questo repository:
-    `SECURITY.md` oggi lo dice esplicitamente, ma se la si abilita (Settings > Code
-    security) il documento va rimesso a indicarla.
+    *Aggiornamento del 20 agosto 2026*: i due punti che restavano da decidere qui erano
+    già chiusi dall'8 agosto 2026 (commit `a1bc6fa`); questa nota allinea il documento.
+    La versione è a fonte unica (`cer_motore.__version__`, che `pyproject.toml`
+    legge come `dynamic`) e il CHANGELOG ne dichiara la politica: `0.0.1` è un marcatore
+    di spike, nessun tag esiste per scelta, e il passaggio a `0.1.0` è legato all'adapter
+    della voce 9, non al tempo. La **segnalazione privata di GitHub è stata attivata** e
+    `SECURITY.md` la indica come canale riservato.
 11. ~~**Uno scenario mock nella fascia critica 0,55-0,70**~~ — *fatto 8 agosto 2026*.
     Terzo scenario `paese`: una CER di paese con 90 kW di fotovoltaico (50 sul tetto del
     supermercato, 40 su quello della palestra comunale) davanti a otto utenze. Rapporto
