@@ -1,7 +1,7 @@
 # Roadmap verso la v0.1
 
-In ordine di priorità. Il gate della v0.1 (Fase 3 della roadmap open source personale, repo
-privato `personal-archive`): un estraneo installa e ottiene un risultato utile in meno di 15 minuti.
+In ordine di priorità. Il gate della v0.1: un estraneo installa e ottiene un risultato
+utile in meno di 15 minuti.
 
 ## Cosa resta aperto
 
@@ -44,7 +44,7 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
 4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
-   **183 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
+   **184 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
    commento) e il resto guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
    periodo interamente senza immissioni, arrotondamenti cattivi al centesimo, bordi del cap.
 
@@ -90,9 +90,7 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    l'intero contributo TIP, con l'assert finale complice. Tutto chiuso e inchiodato da test
    di regressione; le guardie ora sono in una funzione sola, condivisa dalle due strade.
 9. **Adapter export GSE reale**: quando una CER fornirà un export dall'area clienti,
-   scrivere il parser e declassare il mock a fixture di test. Dipende da un contatto CER (nota
-   di verifica del mercato nel repo privato `personal-archive`,
-   `piano-lavorativo-nicola/opensource-impatto/06-verifica-cancello-cer.md`).
+   scrivere il parser e declassare il mock a fixture di test. Dipende da un contatto CER.
 
    *20 agosto 2026, resta aperta ma è specificata*: [`ADAPTER-GSE.md`](ADAPTER-GSE.md)
    scrive il contratto verso il motore — le tre strutture, le unità, l'allineamento

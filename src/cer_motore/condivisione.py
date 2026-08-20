@@ -193,6 +193,17 @@ def partiziona_esente_fattore_f(
     male in `ripartizione.ripartisci`, e riceve lo stesso trattamento. La classificazione
     dei POD resta al chiamante: è un fatto giuridico sul titolare del punto di prelievo,
     non una grandezza che il motore possa dedurre dalle misure.
+
+    PRECONDIZIONE SUL PERIMETRO: `prelievi` deve essere l'insieme COMPLETO dei punti di
+    prelievo della configurazione, non un sottoinsieme. La completezza non è verificabile
+    da qui — il motore non conosce l'anagrafica — ma il suo caso estremo sì: un'ora con
+    EC > 0 e prelievi tutti nulli è impossibile (EC è min(immissioni; prelievi) sulla
+    configurazione intera) e solleva ValueError. Con una mappa troncata ma non nulla
+    l'errore è silenzioso e va nella direzione del troncamento: tolti POD non esenti,
+    la quota esente si gonfia e la decurtazione non viene mai applicata; tolti POD
+    esenti (con `pod_esenti` troncato coerentemente, così la guardia sui POD ignoti
+    non può scattare), l'esenzione sparisce e la decurtazione colpisce chi la norma
+    risparmiava. FORMULE.md §2-bis, "il perimetro".
     """
     ignoti = sorted(set(pod_esenti) - set(prelievi))
     if ignoti:
@@ -204,7 +215,22 @@ def partiziona_esente_fattore_f(
             f"Punti di prelievo noti: {sorted(prelievi)}."
         )
     esenti = set(pod_esenti)
+    # Prima l'allocazione: sono le sue guardie a diagnosticare serie disallineate e
+    # valori non trattabili, con i loro messaggi. La guardia sul perimetro legge le
+    # serie per indice e sarebbe un IndexError nudo se corresse per prima.
     quote = alloca_oraria(prelievi, ec, decimali)
+    ore_incoerenti = [
+        h
+        for h in range(len(ec))
+        if ec[h] > 0 and all(serie[h] == 0 for serie in prelievi.values())
+    ]
+    if ore_incoerenti:
+        raise ValueError(
+            f"Energia condivisa positiva in ore senza alcun prelievo: ore {ore_incoerenti}. "
+            "EC è min(immissioni; prelievi) sulla configurazione intera: un'ora così può "
+            "esistere solo se `prelievi` non è l'insieme completo dei punti di prelievo "
+            "(docstring, PRECONDIZIONE SUL PERIMETRO)."
+        )
     esente, non_esente = [], []
     for h in range(len(ec)):
         # Entrambe le serie si costruiscono SOMMANDO le quote, nessuna delle due per

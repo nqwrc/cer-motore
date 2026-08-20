@@ -218,7 +218,22 @@ def test_partiziona_esente_fattore_f_rifiuta_un_pod_sconosciuto():
 
 
 def test_partiziona_esente_fattore_f_serie_disallineate():
-    # Eredita la guardia di allineamento di alloca_oraria, che e' la funzione da cui
-    # passa: 2 ore di prelievi contro 1 sola di EC non producono una partizione monca.
-    with pytest.raises(ValueError):
+    # Eredita la guardia di allineamento di alloca_oraria, che corre PRIMA della guardia
+    # sul perimetro: il disallineamento resta un ValueError diagnostico in entrambe le
+    # direzioni, mai un IndexError nudo della guardia che legge le serie per indice.
+    with pytest.raises(ValueError, match=r"lunghezza diversa|non allineata"):
         partiziona_esente_fattore_f({"X": [D(1), D(2)]}, [D(1)], ["X"])
+    with pytest.raises(ValueError, match=r"non allineata"):
+        partiziona_esente_fattore_f({"X": [D(1)]}, [D(1), D(5)], ["X"])
+
+
+def test_partiziona_esente_fattore_f_rifiuta_ec_senza_prelievi():
+    # Un'ora con EC > 0 e prelievi tutti nulli e' impossibile per costruzione di EC
+    # (min di immissioni e prelievi sulla configurazione intera): puo' esistere solo se
+    # `prelievi` e' un perimetro troncato. Senza questa guardia le due serie uscivano
+    # entrambe a zero e l'ora spariva in silenzio, invariante compreso.
+    with pytest.raises(ValueError, match="senza alcun prelievo"):
+        partiziona_esente_fattore_f({"X": [D(0)], "Y": [D(0)]}, [D(5)], ["X"])
+    # L'ora incoerente e' nominata nel messaggio.
+    with pytest.raises(ValueError, match=r"ore \[1\]"):
+        partiziona_esente_fattore_f({"X": [D(1), D(0)]}, [D(1), D(5)], ["X"])

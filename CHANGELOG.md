@@ -69,7 +69,7 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
   end-to-end toccava.
 - Guardie della primitiva del vincolo eccedentario, in `ripartizione._valida_eccedentario`
   (*8 agosto 2026*). Vedi "Corretto".
-- Suite di test cresciuta a **183 test**, di cui una parte consistente sono casi risolti a
+- Suite di test cresciuta a **184 test**, di cui una parte consistente sono casi risolti a
   mano con il calcolo passo per passo nel commento (*obiettivo dichiarato: 20 prima della
   v0.1; superato il 7 agosto 2026*). Coperti prosumer, impianti misti FV / non FV, giorni da
   23 e 25 ore per il cambio dell'ora legale, periodi interamente senza immissioni,

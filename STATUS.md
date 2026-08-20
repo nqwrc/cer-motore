@@ -6,13 +6,12 @@ updated: 2026-08-20
 stale-after-days: 30
 
 ## kpi
-None. docs/ROADMAP.md is this project's own declared source of truth for work status
-(CLAUDE.md: "resta la fonte di verità sullo stato del lavoro"); a second number here would
-duplicate it worse. Declared deviation from the 1-3 KPI rule.
+None. docs/ROADMAP.md is this project's own declared source of truth for work status;
+a second number here would duplicate it worse. Declared deviation from the 1-3 KPI rule.
 
 ## now
 Spike / pre-v0.1 calculation engine for Italian energy communities (CER) on documented mock
-GSE data, formulas verified verbatim against the GSE rules and ARERA TIAD (183 test
+GSE data, formulas verified verbatim against the GSE rules and ARERA TIAD (184 test
 functions). 14 of 15 roadmap items closed; pause lifted per maintainer decision, work resumed.
 
 ## backlog

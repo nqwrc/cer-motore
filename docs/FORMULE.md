@@ -110,7 +110,7 @@ sull'altra. Le due serie si tariffano **separatamente** — F = 0
 sulla prima, F sulla seconda — e i contributi si sommano; separatamente e non sui totali di
 periodo, perché `TIP_h` dipende dal prezzo zonale dell'ora.
 
-Due precisazioni che è facile confondere:
+Tre precisazioni che è facile confondere:
 
 - la partizione **non crea un secondo insieme incentivato**. Gli insiemi "j" del §4 si
   formano per *impianto*, e un impianto in cumulo sta tutto nell'insieme a soglia 45%
@@ -118,7 +118,15 @@ Due precisazioni che è facile confondere:
 - la **classificazione dei punti di prelievo** (chi è ente territoriale, ente religioso,
   ente del terzo settore, ente di protezione ambientale, persona fisica) è un fatto
   giuridico sul titolare del POD e non è deducibile dalle misure: il motore la riceve dal
-  chiamante come elenco di POD, e non fa parte dell'export GSE (vedi `ADAPTER-GSE.md`).
+  chiamante come elenco di POD, e non fa parte dell'export GSE (vedi `ADAPTER-GSE.md`);
+- il **perimetro**: `prelievi` deve essere l'insieme completo dei punti di prelievo della
+  configurazione. Un sottoinsieme troncato sposta energia fra le due quote in silenzio,
+  nella direzione del troncamento — quota esente gonfiata se mancano POD non esenti,
+  esenzione sparita se mancano POD esenti — e l'invariante `esente + non_esente = EC`
+  regge comunque, quindi nulla lo segnala. Il motore intercetta solo il caso estremo —
+  un'ora con EC > 0 e prelievi tutti nulli, impossibile per costruzione di EC — e lo
+  rifiuta; la completezza vera resta una responsabilità del chiamante, come la
+  classificazione.
 
 Se i tracciati GSE prescriveranno un criterio di attribuzione, va sostituito questo.
 
