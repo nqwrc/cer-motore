@@ -115,8 +115,9 @@ def tip_unitaria(
     NOTA DI PERIMETRO: l'energia condivisa afferente a punti di prelievo di enti
     territoriali, enti religiosi, enti del terzo settore, protezione ambientale e
     persone fisiche è ESENTE dal fattore F (Regole Operative pag. 41). L'esenzione
-    richiede di partizionare l'energia condivisa in esente e non esente prima di
-    chiamare questa funzione: è una scelta di configurazione, non di tariffa.
+    riguarda l'energia, non la tariffa: si partiziona l'energia condivisa con
+    `condivisione.partiziona_esente_fattore_f` e si chiama questa funzione due volte,
+    con F = 0 sulla parte esente e con F sull'altra (docs/FORMULE.md §2-bis).
     """
     if potenza_kw > POTENZA_MAX_INCENTIVABILE_KW:
         raise ValueError(

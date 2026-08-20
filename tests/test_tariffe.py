@@ -3,6 +3,7 @@ from decimal import Decimal as D
 
 import pytest
 
+from cer_motore.condivisione import partiziona_esente_fattore_f
 from cer_motore.tariffe import (
     cap_tariffa,
     incentivo_periodo,
@@ -141,3 +142,53 @@ def test_tip_unitaria_zona_sconosciuta_fallisce():
     # che sottostimerebbe l'incentivo di 10 €/MWh. Qui "Nord" maiuscolo non è "nord".
     with pytest.raises(KeyError):
         tip_unitaria(D(100), D(150), zona="Nord")
+
+
+def test_il_fattore_f_si_applica_solo_alla_quota_non_esente():
+    # Roadmap 13: il pezzo mancante del cumulo con contributo in conto capitale. Il
+    # fattore F non decurta tutta la tariffa dell'impianto in cumulo, ma solo la parte
+    # dell'energia condivisa afferente a punti di prelievo NON esenti; enti
+    # territoriali, enti religiosi, terzo settore, protezione ambientale e persone
+    # fisiche sono esenti (Regole Operative pag. 41). Serve quindi partizionare l'EC
+    # prima di tariffarla, e le due parti si tariffano SEPARATAMENTE perché TIP_h
+    # dipende dal prezzo zonale dell'ora: un totale di periodo non è più tariffabile.
+    #
+    # Configurazione: impianto FV da 100 kW al nord, in cumulo con F = 0,50, prezzo
+    # zonale 150 €/MWh costante su due ore. Tre punti di prelievo, esente solo il comune.
+    #   TIP piena  = min(120; 80 + max(0; 180 − 150)) + 10 = 110 + 10 = 120 €/MWh
+    #   TIP con F  = 120 * (1 − 0,50) = 60 €/MWh
+    # Partizione (pro-quota oraria dei prelievi, docs/FORMULE.md §2-bis):
+    #   ora 1: prelievi 3/1/0 su EC=2 → comune 1,5 esente ; 0,5 non esente
+    #   ora 2: prelievi 1/1/2 su EC=4 → comune 1 esente ; 3 non esente
+    #   esente 2,5 kWh ; non esente 3,5 kWh ; totale 6 kWh
+    # Contributo:
+    #   esente     = 2,5 kWh * 120 €/MWh / 1000 = 0,30 €
+    #   non esente = 3,5 kWh * 60 €/MWh / 1000  = 0,21 €
+    #   TIP totale = 0,51 €
+    prelievi = {"COMUNE": [D(3), D(1)], "A": [D(1), D(1)], "B": [D(0), D(2)]}
+    ec, prezzi = [D(2), D(4)], [D(150), D(150)]
+    esente, non_esente = partiziona_esente_fattore_f(prelievi, ec, ["COMUNE"])
+
+    a = incentivo_periodo(esente, prezzi, D(100), zona="nord",
+                          fattore_conto_capitale=D(0))
+    b = incentivo_periodo(non_esente, prezzi, D(100), zona="nord",
+                          fattore_conto_capitale=D("0.50"))
+    assert (a["tip"], b["tip"]) == (D("0.30"), D("0.21"))
+    assert a["tip"] + b["tip"] == D("0.51")
+
+    # QUANTO CAMBIA, che è il motivo per cui la partizione esiste. Ignorarla e applicare
+    # F a tutta l'energia dell'impianto darebbe 6 kWh * 60 = 0,36 €: 0,15 € in meno,
+    # il 29% del contributo, tolti a un impianto che la norma non decurtava per intero.
+    tutto_decurtato = incentivo_periodo(ec, prezzi, D(100), zona="nord",
+                                        fattore_conto_capitale=D("0.50"))
+    assert tutto_decurtato["tip"] == D("0.36")
+    assert a["tip"] + b["tip"] - tutto_decurtato["tip"] == D("0.15")
+    # E il tetto resta la tariffa piena, che spetterebbe senza alcun contributo in conto
+    # capitale: la partizione non può far incassare più di così.
+    senza_cumulo = incentivo_periodo(ec, prezzi, D(100), zona="nord")
+    assert senza_cumulo["tip"] == D("0.72") > a["tip"] + b["tip"]
+
+    # La valorizzazione ARERA non c'entra col fattore F e non si perde nella partizione:
+    # 6 kWh * 8,22 €/MWh = 0,04932 €, comunque si spezzi l'energia (docs/FORMULE.md §3).
+    assert a["arera"] + b["arera"] == senza_cumulo["arera"] == D("0.04932")
+    assert a["ec_tot_kwh"] + b["ec_tot_kwh"] == D(6) == sum(ec)

@@ -339,6 +339,29 @@ def test_scomponi_eccedentario_soglia_del_cumulo_conto_capitale():
     assert scomponi_eccedentario(10000, D(60), D(100)) == (9500, 500)
 
 
+def test_scomponi_eccedentario_ai_bordi_della_soglia_del_cumulo():
+    # I tre bordi della SECONDA soglia, quella al 45% degli impianti che cumulano la
+    # tariffa premio con un contributo in conto capitale (Regole Operative pag. 41,
+    # Appendice B §4 pag. 161). Il gemello sulla soglia del 55% è due test più su; qui
+    # il bordo conta di più, perché una CER che ha preso il PNRR ha 10 punti percentuali
+    # di margine in meno prima che il vincolo scatti, e ci arriva molto più spesso.
+    soglia = SOGLIA_ECCEDENTARIO_CUMULO_CONTO_CAPITALE
+    # SOTTO: EC=44 su EI=100 → rapporto 0,44 ; max(0; 0,44 − 0,45) = 0 → niente.
+    assert scomponi_eccedentario(10000, D(44), D(100), soglia=soglia) == (10000, 0)
+    # ALLA SOGLIA ESATTA: rapporto 0,45 = soglia → max(0; 0) = 0. Il bordo NON genera
+    # eccedentario: la norma scrive max[0; rapporto − soglia], e a rapporto uguale alla
+    # soglia la differenza è zero, non "si è raggiunta la soglia quindi scatta".
+    assert scomponi_eccedentario(10000, D(45), D(100), soglia=soglia) == (10000, 0)
+    # SOPRA di un punto percentuale: 0,46 − 0,45 = 0,01 → 100 cent = 1,00 €.
+    assert scomponi_eccedentario(10000, D(46), D(100), soglia=soglia) == (9900, 100)
+
+    # Lo stesso rapporto 0,46, se l'impianto NON è in cumulo, resta sotto la soglia del
+    # 55% e non genera nulla. Sono 100 centesimi che cambiano tasca per un solo dato
+    # amministrativo — aver preso o no il contributo in conto capitale — ed è la ragione
+    # per cui `InsiemeIncentivato.soglia` è un campo obbligatorio senza default.
+    assert scomponi_eccedentario(10000, D(46), D(100)) == (10000, 0)
+
+
 def test_scomponi_eccedentario_senza_immissioni():
     # Impianto fermo per tutto il periodo: EI = 0 e EC = 0. Il rapporto EC/EI non è
     # definito, quindi non si calcola: l'importo (comunque nullo, in pratica) resta

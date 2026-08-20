@@ -3,9 +3,15 @@
 Fonte: DM CACER 414/2023; Regole Operative GSE (agg. DD 16/7/2025).
 Per ciascuna ora: EC_h = min(somma immissioni, somma prelievi) tra i POD della
 configurazione sottesi alla stessa cabina primaria. Vedi docs/FORMULE.md §1.
+
+Qui stanno anche le due partizioni di quella grandezza che la tariffa richiede e la
+norma non prescrive — l'attribuzione agli impianti (§1-bis) e quella fra energia esente
+e non esente dal fattore F del cumulo con conto capitale (§2-bis) — perché sono la
+stessa operazione pro-quota oraria applicata due volte, una alle immissioni e una ai
+prelievi, ed entrambe sono scelte di modellazione dichiarate.
 """
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Mapping, Sequence
+from typing import Collection, Mapping, Sequence
 
 from .comune import nel_contesto_del_motore
 from .ripartizione import riparto_per_pesi
@@ -131,3 +137,82 @@ def alloca_oraria(
         for pod, u in riparto.items():
             quote[pod].append(Decimal(u) * passo)
     return quote
+
+
+@nel_contesto_del_motore
+def partiziona_esente_fattore_f(
+    prelievi: Mapping[str, Serie],
+    ec: Serie,
+    pod_esenti: Collection[str],
+    decimali: int = DECIMALI_KWH,
+) -> tuple[list[Decimal], list[Decimal]]:
+    """Divide l'energia condivisa oraria in (esente, non esente) dal fattore F.
+
+    Fonte dell'ESENZIONE, Regole Operative pag. 41: l'energia condivisa afferente a
+    punti di prelievo di **enti territoriali, enti religiosi, enti del terzo settore,
+    enti di protezione ambientale e persone fisiche** è esente dal fattore F, cioè dalla
+    decurtazione `TIP × (1 − F)` che si applica agli impianti che cumulano la tariffa
+    premio con un contributo in conto capitale (Appendice B §3 pag. 161, `tariffe.py`).
+    L'esenzione è al PRELIEVO, non alla produzione: lo stesso impianto in cumulo produce
+    energia in parte decurtata e in parte no, a seconda di chi l'ha consumata nell'ora.
+
+    Il CRITERIO DI ATTRIBUZIONE, invece, è nostro — **[modellazione]**, docs/FORMULE.md
+    §2-bis. Le Regole Operative dicono quale energia è esente ma non come misurarla, per
+    la stessa ragione per cui non prescrivono come attribuire l'EC ai singoli impianti
+    (§1-bis): l'energia condivisa oraria è `min(immissioni, prelievi)` sulla
+    configurazione intera e non nasce già intestata a un POD. Qui si usa lo stesso
+    criterio già adottato là, applicato ai prelievi — pro-quota oraria, via
+    `alloca_oraria` — e ne eredita l'invariante esatto:
+
+        esente[h] + non_esente[h] == EC[h]   (quantizzato a `decimali`, per ogni ora)
+
+    Va sostituito se i tracciati GSE ne prescriveranno uno diverso.
+
+    LA PARTIZIONE NON CREA UN SECONDO INSIEME INCENTIVATO. Gli insiemi "j" del vincolo
+    eccedentario (Regole Operative pag. 42, `ripartizione.InsiemeIncentivato`) si
+    formano per IMPIANTO — un impianto in cumulo sta tutto nell'insieme a soglia 45% —
+    mentre questa partizione riguarda l'energia e decide solo a quale metà si applica F.
+    Le due cose si sommano, non si intrecciano.
+
+    COME SI COMPONE. La serie in ingresso è tipicamente l'EC già attribuita a un singolo
+    impianto in cumulo (`alloca_oraria(immissioni, ec)[pod]`), perché la tariffa premio
+    si calcola per impianto. Le due serie che escono vanno tariffate separatamente e i
+    contributi si sommano:
+
+        esente, non_esente = partiziona_esente_fattore_f(prelievi, ec_pod, esenti)
+        a = incentivo_periodo(esente, prezzi, kw, fattore_conto_capitale=Decimal(0))
+        b = incentivo_periodo(non_esente, prezzi, kw, fattore_conto_capitale=f)
+
+    Serie ORARIE e non totali di periodo, perché `TIP_h` dipende dal prezzo zonale
+    dell'ora: un totale di periodo non è più tariffabile.
+
+    `pod_esenti` sono i POD DI PRELIEVO esenti, e devono esistere fra i `prelievi`: un
+    POD scritto male non è un caso di zero energia, è energia esente trattata come non
+    esente, cioè tariffa premio decurtata a chi non doveva esserlo, in silenzio e senza
+    che nessun invariante se ne accorga. È la stessa specie di errore del ruolo scritto
+    male in `ripartizione.ripartisci`, e riceve lo stesso trattamento. La classificazione
+    dei POD resta al chiamante: è un fatto giuridico sul titolare del punto di prelievo,
+    non una grandezza che il motore possa dedurre dalle misure.
+    """
+    ignoti = sorted(set(pod_esenti) - set(prelievi))
+    if ignoti:
+        raise ValueError(
+            f"POD dichiarati esenti dal fattore F ma assenti dai prelievi: {ignoti}. "
+            "Non è un prelievo nullo: l'energia di quei punti resterebbe nella quota "
+            "NON esente e prenderebbe la decurtazione TIP × (1 − F) che la norma le "
+            "risparmia (Regole Operative pag. 41), senza che nulla lo segnali. "
+            f"Punti di prelievo noti: {sorted(prelievi)}."
+        )
+    esenti = set(pod_esenti)
+    quote = alloca_oraria(prelievi, ec, decimali)
+    esente, non_esente = [], []
+    for h in range(len(ec)):
+        # Entrambe le serie si costruiscono SOMMANDO le quote, nessuna delle due per
+        # differenza da EC[h]: così l'invariante è quello di `alloca_oraria` — la somma
+        # delle quote è esattamente EC[h] quantizzato — invece di un'uguaglianza
+        # imposta a una delle due parti e da verificare sull'altra.
+        esente.append(sum((q[h] for pod, q in quote.items() if pod in esenti), Decimal(0)))
+        non_esente.append(
+            sum((q[h] for pod, q in quote.items() if pod not in esenti), Decimal(0))
+        )
+    return esente, non_esente

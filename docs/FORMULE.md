@@ -83,10 +83,41 @@ Sta dentro la graffa ma fuori dal `min`, quindi il massimo al nord per un impian
 
 **Fattore F**, decurtazione per cumulo con contributo in conto capitale: varia linearmente
 fra 0 (nessun contributo) e 0,50 (contributo pari al 40% dell'investimento). Appendice B §3
-pag. 161. *Punto aperto*: l'energia afferente a punti di prelievo di enti territoriali,
-enti religiosi, enti del terzo settore, protezione ambientale e persone fisiche è **esente**
-dal fattore F (pag. 41), il che richiede di partizionare l'energia condivisa in esente e
-non esente. Il motore espone il parametro ma non fa la partizione.
+pag. 161. L'energia afferente a punti di prelievo di enti territoriali, enti religiosi,
+enti del terzo settore, protezione ambientale e persone fisiche è **esente** dal fattore F
+(pag. 41): il fattore non si applica quindi a tutta l'energia dell'impianto in cumulo, ma
+solo alla parte non esente. Come si misura quella parte è il §2-bis.
+
+## 2-bis. Partizione dell'energia esente dal fattore F — [modellazione]
+
+L'esenzione dal fattore F è **[verificato]** — pag. 41, elenco delle cinque categorie di
+titolari del punto di prelievo riportato qui sopra — ma il modo di misurarla non è
+prescritto, esattamente come per l'attribuzione dell'EC agli impianti (§1-bis) e per la
+stessa ragione: l'energia condivisa oraria è `min(immissioni; prelievi)` sulla
+configurazione intera e non nasce già intestata a un punto di prelievo.
+
+`condivisione.partiziona_esente_fattore_f` adotta perciò lo stesso criterio del §1-bis,
+applicato ai prelievi invece che alle immissioni:
+
+    esente[h]     = EC[h] × Σ(prelievi dei POD esenti nell'ora h) / Σ(prelievi nell'ora h)
+    non_esente[h] = EC[h] − esente[h]
+
+con lo stesso riparto in unità intere da 1e-6 kWh, quindi con l'invariante esatto
+`esente[h] + non_esente[h] = EC[h]`. Le due serie si tariffano **separatamente** — F = 0
+sulla prima, F sulla seconda — e i contributi si sommano; separatamente e non sui totali di
+periodo, perché `TIP_h` dipende dal prezzo zonale dell'ora.
+
+Due precisazioni che è facile confondere:
+
+- la partizione **non crea un secondo insieme incentivato**. Gli insiemi "j" del §4 si
+  formano per *impianto*, e un impianto in cumulo sta tutto nell'insieme a soglia 45%
+  qualunque sia la categoria di chi ne ha consumato l'energia;
+- la **classificazione dei punti di prelievo** (chi è ente territoriale, ente religioso,
+  ente del terzo settore, ente di protezione ambientale, persona fisica) è un fatto
+  giuridico sul titolare del POD e non è deducibile dalle misure: il motore la riceve dal
+  chiamante come elenco di POD, e non fa parte dell'export GSE (vedi `ADAPTER-GSE.md`).
+
+Se i tracciati GSE prescriveranno un criterio di attribuzione, va sostituito questo.
 
 ## 3. Corrispettivo di valorizzazione ARERA (TIAD) — [verificato] struttura
 
@@ -131,8 +162,10 @@ immessa; prelievo coincidente con la condivisione oraria; quote uguali), più il
 
 ## Punti ancora aperti
 
-- **Esenzione dal fattore F**: partizione dell'energia condivisa in esente e non esente
-  (§2). Serve prima di modellare seriamente il cumulo con conto capitale.
+- **Esenzione dal fattore F**: la partizione c'è (§2-bis), ma il criterio di attribuzione
+  è nostro e non prescritto, e resta aperto **da dove arriva la classificazione dei punti
+  di prelievo** nelle cinque categorie esenti. Non sta nelle misure e non sta nell'export
+  GSE: serve una fonte anagrafica, come per il campo "impresa" del §4.
 - **Valore TIAD per anno**: 8,22 è il 2024. Serve la serie storica e la fonte ARERA puntuale.
 - **Formato reale export GSE** dall'area clienti: il mock è un'assunzione documentata
   (`MOCK-GSE.md`). Non dipende da noi, dipende da una CER che ci passi un export vero.
