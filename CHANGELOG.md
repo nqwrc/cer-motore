@@ -69,11 +69,46 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
   end-to-end toccava.
 - Guardie della primitiva del vincolo eccedentario, in `ripartizione._valida_eccedentario`
   (*8 agosto 2026*). Vedi "Corretto".
-- Suite di test cresciuta a **162 test**, di cui una parte consistente sono casi risolti a
+- Suite di test cresciuta a **183 test**, di cui una parte consistente sono casi risolti a
   mano con il calcolo passo per passo nel commento (*obiettivo dichiarato: 20 prima della
   v0.1; superato il 7 agosto 2026*). Coperti prosumer, impianti misti FV / non FV, giorni da
   23 e 25 ore per il cambio dell'ora legale, periodi interamente senza immissioni,
-  arrotondamenti costruiti apposta per non chiudere, bordi del cap tariffario.
+  arrotondamenti costruiti apposta per non chiudere, bordi del cap tariffario e bordi di
+  entrambe le soglie del vincolo eccedentario.
+- `rendiconto.rendiconto_csv` — export del rendiconto in CSV (*20 agosto 2026*). Stessa
+  sostanza del Markdown per un altro pubblico: una riga per destinatario e l'importo
+  scomposto per titolo (quota da produttore, da consumatore, eccedentaria, fondo), più
+  ruolo e qualità di impresa del percettore, cioè i due campi da cui dipende il
+  trattamento fiscale del riparto (Risoluzione AE 33/2024, fuori dal perimetro del
+  motore). Separatore `;` e punto decimale come i CSV di misura, ordine delle colonne
+  fisso in `INTESTAZIONE_CSV`, nessuna riga di totali e nessun commento: il file resta
+  rettangolare, così `SOMMA(totale_eur)` è il totale ripartito e non il doppio. Il fondo
+  `finalita_sociali` sta nella colonna dell'eccedentario e non fra i fondi statutari,
+  perché le Regole Operative pag. 41 danno all'importo eccedentario una sola destinazione
+  con due forme. La guardia di coerenza degli arrotondamenti è ora in una funzione sola
+  condivisa dalle due scritture, `rendiconto._componenti_cent`. La demo scrive i tre CSV
+  accanto ai tre Markdown, che restano identici byte per byte.
+- `condivisione.partiziona_esente_fattore_f` — partizione dell'energia condivisa fra quota
+  esente e quota non esente dal fattore F (*20 agosto 2026*), il pezzo che mancava al
+  cumulo con contributo in conto capitale. La decurtazione `TIP × (1 − F)` non si applica
+  all'energia afferente a punti di prelievo di enti territoriali, enti religiosi, enti del
+  terzo settore, enti di protezione ambientale e persone fisiche (Regole Operative
+  pag. 41): le due serie orarie si tariffano separatamente, F = 0 sulla prima e F
+  sull'altra, e non sui totali di periodo, perché `TIP_h` dipende dal prezzo zonale
+  dell'ora. **Misurato: applicare F a tutta l'energia dell'impianto toglie il 29% del
+  contributo** a un impianto che la norma non decurtava per intero. L'esenzione è
+  verificata verbatim, il criterio di attribuzione no — la norma dice quale energia è
+  esente ma non come misurarla — quindi si adotta il criterio pro-quota oraria già usato
+  per attribuire l'EC agli impianti, applicato ai prelievi, dichiarato `[modellazione]`
+  nel nuovo §2-bis di [`docs/FORMULE.md`](docs/FORMULE.md). Un POD esente scritto male è
+  rifiutato al confine: non sarebbe un prelievo nullo, ma tariffa premio decurtata a chi
+  la norma esentava, in silenzio.
+- [`docs/ADAPTER-GSE.md`](docs/ADAPTER-GSE.md) (*20 agosto 2026*): specifica dell'interfaccia
+  per l'adapter dell'export GSE reale. Il contratto verso il motore (le tre strutture, le
+  unità, l'allineamento posizionale, il fuso, la granularità) non dipende da come il GSE
+  scrive i propri file ed è scritto per intero; il documento elenca anche le quattro cose
+  che un parser reale deve fare e il mock no, e le dieci domande a cui solo un export vero
+  può rispondere. **Non chiude** la voce 9 della roadmap: manca il file, non il progetto.
 - Documentazione: [`docs/FORMULE.md`](docs/FORMULE.md) (mappa delle regole con fonte, pagina
   e stato di verifica), [`docs/MOCK-GSE.md`](docs/MOCK-GSE.md),
   [`docs/REGOLE.md`](docs/REGOLE.md), [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -218,9 +253,10 @@ pag. 161 del lettore).
 ### Ancora aperto
 
 Non è ancora stato osservato un export GSE reale dall'area clienti: i dati in ingresso sono
-mock documentati. Restano aperti anche la partizione dell'energia esente dal fattore F per il
-cumulo con conto capitale, uno scenario mock nella fascia critica 0,55–0,70 e alcuni punti di
-robustezza che oggi non spostano denaro. Elenco aggiornato in
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+mock documentati, ed è l'unica voce di roadmap ancora aperta. Restano aperti, dentro voci
+già chiuse, due punti che non spostano denaro oggi: il criterio con cui si attribuisce
+l'energia esente dal fattore F ai punti di prelievo, che è nostro e non prescritto, e la
+fonte da cui prendere la classificazione dei POD nelle cinque categorie esenti, che non sta
+nelle misure. Elenco aggiornato in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 [Non rilasciato]: https://github.com/nqwrc/cer-motore/commits/main

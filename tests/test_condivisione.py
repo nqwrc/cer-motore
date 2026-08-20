@@ -190,14 +190,15 @@ def test_partiziona_esente_fattore_f_ai_due_estremi():
 def test_partiziona_esente_fattore_f_invariante_dove_la_divisione_non_chiude():
     # Lo stesso caso periodico degli altri due riparti: tre consumatori da 4 kWh in
     # un'ora ed EC = 10 kWh. 10*4/12 = 3,333... e la somma dei tre quozienti non fa 10.
-    # Col resto maggiore su unita' da 1e-6 kWh: 3.333333 + 3.333333 + 3.333334 = 10.
-    # Un solo consumatore esente → esente 3.333333 (o 3.333334, secondo la chiave) e
-    # la somma delle due parti resta esattamente 10, che e' cio' che conta: nessun
-    # millesimo di kWh sfugge alla tariffazione ne' viene tariffato due volte.
+    # Col resto maggiore su unita' da 1e-6 kWh: quote esatte 3_333_333,33 ciascuna,
+    # troncate 3_333_333, somma 9_999_999, resta 1 unita'; resti pari, il pareggio si
+    # rompe sull'ordine della chiave decrescente, quindi l'unita' va a "C".
+    # Esente il solo "C" → 3.333334 esente e 6.666666 non esente, somma esattamente 10:
+    # nessun millesimo di kWh sfugge alla tariffazione ne' viene tariffato due volte.
     prelievi = {"A": [D(4)], "B": [D(4)], "C": [D(4)]}
     ec = [D(10)]
     esente, non_esente = partiziona_esente_fattore_f(prelievi, ec, ["C"])
-    assert esente == [D("3.333334")]      # C prende l'unita' di resto (chiave decrescente)
+    assert esente == [D("3.333334")]      # C: 3_333_333 + l'unita' di resto
     assert non_esente == [D("6.666666")]
     assert esente[0] + non_esente[0] == D(10)
 

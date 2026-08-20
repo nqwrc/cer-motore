@@ -3,7 +3,9 @@
 Il formato reale dei file che il referente scarica dall'area clienti GSE (portale SPC) è dietro
 login e **non è stato ancora osservato**. Questo mock è fedele *alla sostanza* del dato (ciò che il
 GSE misura e calcola è documentato pubblicamente), non alla forma (nomi colonne, layout).
-Quando arriverà un export reale, si scrive un adapter e il mock resta per i test.
+Quando arriverà un export reale, si scrive un adapter e il mock resta per i test: che cosa
+quell'adapter dovrà consegnare al motore, e che cosa resta da chiedere a un file vero, sta in
+[`ADAPTER-GSE.md`](ADAPTER-GSE.md).
 
 ## Cosa è certo (fonti pubbliche)
 

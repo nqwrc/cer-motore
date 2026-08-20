@@ -93,6 +93,7 @@ nominata. Fonti e stato di verifica: [`docs/FORMULE.md`](docs/FORMULE.md).
 | Le formule, con citazione verbatim e numero di pagina | [`docs/FORMULE.md`](docs/FORMULE.md) |
 | Lo statuto in TOML: schema, campi, errori | [`docs/REGOLE.md`](docs/REGOLE.md) · [`regole-esempio.toml`](regole-esempio.toml) |
 | Cosa assume il mock sul formato GSE | [`docs/MOCK-GSE.md`](docs/MOCK-GSE.md) |
+| Che cosa dovrà fare l'adapter per l'export GSE vero | [`docs/ADAPTER-GSE.md`](docs/ADAPTER-GSE.md) |
 | Cosa è fatto e cosa manca | [`docs/ROADMAP.md`](docs/ROADMAP.md) · [`CHANGELOG.md`](CHANGELOG.md) |
 | Come contribuire senza rompere le cose che contano | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 | Come segnalare un errore di calcolo | [`SECURITY.md`](SECURITY.md) |

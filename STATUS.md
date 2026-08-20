@@ -1,8 +1,8 @@
 # status
 
-state: paused
+state: active
 remote: github-public
-updated: 2026-08-13
+updated: 2026-08-20
 stale-after-days: 30
 
 ## kpi
@@ -11,11 +11,12 @@ None. docs/ROADMAP.md is this project's own declared source of truth for work st
 duplicate it worse. Declared deviation from the 1-3 KPI rule.
 
 ## now
-Spike / pre-v0.1: pure calculation engine for Italian energy communities (CER), working on
-documented mock GSE data, formulas verified verbatim against the official GSE rules and ARERA
-TIAD (170 test functions). Paused per the 2026-08-10 decision in nqwrc.career: the whole
-open-source track is on hold until M0 (signed contract) — evidence: nqwrc.career/STATUS.md.
+Spike / pre-v0.1 calculation engine for Italian energy communities (CER) on documented mock
+GSE data, formulas verified verbatim against the GSE rules and ARERA TIAD (183 test
+functions). 14 of 15 roadmap items closed; pause lifted per maintainer decision, work resumed.
 
 ## backlog
 - see docs/ROADMAP.md and the repo's open issues for the technical backlog
-- resume is gated on M0, not on this repo's own state
+- roadmap item 9, the adapter for a real GSE export, is the only one still open: it is
+  blocked on obtaining a real export file from a CER, not on this repo's own state. The
+  interface that adapter must satisfy is specified in docs/ADAPTER-GSE.md

@@ -5,14 +5,14 @@ privato `personal-archive`): un estraneo installa e ottiene un risultato utile i
 
 ## Cosa resta aperto
 
-Dodici voci su quindici sono chiuse. Restano, in ordine di quanto sbloccherebbero:
+Quattordici voci su quindici sono chiuse. Resta la sola che non dipende da noi:
 
-- **9 — adapter per l'export GSE reale**: il solo punto che non dipende da noi. Finché
-  nessuna CER passa un export vero dall'area clienti, il formato di `mock.py` resta
-  un'assunzione documentata e il motore non può essere usato su dati veri.
-- **13 — cumulo con contributo in conto capitale**: la formula è verificata e implementata
-  come parametro, manca la partizione dell'energia condivisa fra esente e non esente.
-- **14 — rendiconto in CSV** con i campi utili al commercialista.
+- **9 — adapter per l'export GSE reale**. Finché nessuna CER passa un export vero
+  dall'area clienti, il formato di `mock.py` resta un'assunzione documentata e il motore
+  non può essere usato su dati veri. Il contratto verso il motore, però, non dipende da
+  come il GSE scrive i propri CSV ed è ora scritto per intero in
+  [`ADAPTER-GSE.md`](ADAPTER-GSE.md), insieme alle domande a cui solo un file vero può
+  rispondere: la voce resta aperta, ma è pronta da chiudere in una sessione.
 
 L'elenco numerato qui sotto è cronologico e le voci sono citate per numero dal codice e
 dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si è imparato.
@@ -44,7 +44,7 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
 4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
-   **162 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
+   **183 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
    commento) e il resto guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
    periodo interamente senza immissioni, arrotondamenti cattivi al centesimo, bordi del cap.
 
@@ -93,6 +93,13 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    scrivere il parser e declassare il mock a fixture di test. Dipende da un contatto CER (nota
    di verifica del mercato nel repo privato `personal-archive`,
    `piano-lavorativo-nicola/opensource-impatto/06-verifica-cancello-cer.md`).
+
+   *20 agosto 2026, resta aperta ma è specificata*: [`ADAPTER-GSE.md`](ADAPTER-GSE.md)
+   scrive il contratto verso il motore — le tre strutture, le unità, l'allineamento
+   posizionale, il fuso, la granularità — che è la parte indipendente da come il GSE
+   scrive i propri file, più le quattro cose che un parser reale deve fare e il mock no
+   (validare la griglia temporale in testa a tutto) e le dieci domande a cui solo un
+   export vero può rispondere. Quel che manca è il file, non il progetto.
 10. ~~**Pubblicazione e infrastruttura di progetto**~~ — *fatto 8 agosto 2026*, dopo lo
     spostamento del progetto in un repository proprio su
     <https://github.com/nqwrc/cer-motore>.
@@ -163,18 +170,55 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
     di `consumatore`, 1500 centesimi cambiavano tasca in silenzio, con l'invariante di
     somma che reggeva. Un criterio inesistente cadeva nel ramo di default e ripartiva
     pro-quota energia, cioè dava una risposta plausibile a una domanda mai posta.
-13. **Cumulo conto capitale (PNRR)**: la formula c'è ed è verificata — `TIP × (1 − F)`, F da
-    0 a 0,50, esposta come parametro di `tip_unitaria`. Manca la parte difficile:
-    l'energia afferente a punti di prelievo di enti territoriali, enti religiosi, enti del
-    terzo settore, protezione ambientale e persone fisiche è **esente** dal fattore F, il
-    che impone di partizionare l'energia condivisa in esente e non esente prima del calcolo.
-14. Rendiconto: export CSV oltre al Markdown, campi utili al commercialista (Risoluzione AE
-    33/2024). La dichiarazione che il vincolo eccedentario è calcolato sul periodo mentre
-    il GSE lo verifica a conguaglio annuale c'è già, in fondo al rendiconto, ma solo quando
-    l'eccedentario è diverso da zero. **Attenzione scrivendo l'export CSV**: la chiave
-    `totale` di `incentivo_periodo` è `tip + arera` in euro e NON va portata in centesimi
-    da sola, altrimenti reintroduce l'incoerenza chiusa al punto 15. Le due componenti si
-    convertono separatamente — c'è un avviso in testa alla docstring della funzione.
+13. ~~**Cumulo conto capitale (PNRR)**~~ — *fatto 20 agosto 2026*. La formula `TIP × (1 − F)`
+    c'era già, verificata ed esposta come parametro di `tip_unitaria`; mancava la parte
+    difficile, cioè la partizione. `condivisione.partiziona_esente_fattore_f` divide la
+    serie oraria dell'energia condivisa in quota esente e quota non esente: l'energia
+    afferente a punti di prelievo di enti territoriali, enti religiosi, enti del terzo
+    settore, protezione ambientale e persone fisiche è **esente** dal fattore F (Regole
+    Operative pag. 41). Le due serie si tariffano separatamente — F = 0 sulla prima, F
+    sull'altra — e non sui totali di periodo, perché `TIP_h` dipende dal prezzo zonale
+    dell'ora. Misurato sul caso a mano: applicare F a tutta l'energia dell'impianto
+    toglie il **29%** del contributo a un impianto che la norma non decurtava per intero.
+
+    **L'esenzione è verificata, il criterio di attribuzione no**, e la differenza è
+    dichiarata: le Regole Operative dicono *quale* energia è esente ma non *come*
+    misurarla, come già per l'attribuzione dell'EC ai singoli impianti. Si adotta lo
+    stesso criterio pro-quota oraria, applicato ai prelievi invece che alle immissioni,
+    ed è marcato `[modellazione]` nel nuovo §2-bis di [`FORMULE.md`](FORMULE.md), con lo
+    stesso riparto in unità da 1e-6 kWh e quindi lo stesso invariante esatto.
+
+    Due cose che è facile confondere e che ora sono scritte: la partizione **non crea un
+    secondo insieme incentivato** (gli insiemi "j" si formano per impianto, e un impianto
+    in cumulo sta tutto in quello a soglia 45%); e la **classificazione dei POD** nelle
+    cinque categorie esenti è un fatto giuridico sul titolare, non deducibile dalle
+    misure — resta l'unico punto aperto della voce, insieme al criterio. Aggiunti anche i
+    tre bordi della soglia del 45%, che erano coperti solo di sopra: 0,44, 0,45 esatto
+    (non genera eccedentario) e 0,46.
+14. ~~**Rendiconto in CSV**~~ — *fatto 20 agosto 2026*. `rendiconto.rendiconto_csv`, stessa
+    sostanza del Markdown per un altro pubblico: una riga per destinatario e l'importo
+    scomposto per titolo — quota da produttore, da consumatore, eccedentaria, fondo — più
+    ruolo e qualità di impresa del percettore, che sono i due campi da cui dipende il
+    trattamento fiscale del riparto (Risoluzione AE 33/2024, fuori perimetro motore).
+    Separatore `;` e punto decimale come i CSV di misura del mock, ordine delle colonne
+    fisso e dichiarato in `INTESTAZIONE_CSV`, fine riga `\n` esplicito perché il `\r\n` di
+    default di `csv.writer` diventa `\r\r\n` passando da `write_text` su Windows.
+
+    Niente riga di totali e niente commenti: il file resta rettangolare, così
+    `SOMMA(totale_eur)` è il totale ripartito e non il doppio. Il fondo `finalita_sociali`
+    sta nella colonna dell'eccedentario e non in quella dei fondi statutari, perché le
+    Regole Operative pag. 41 danno all'importo eccedentario una sola destinazione con due
+    forme, e sommare quella colonna deve dare l'importo del periodo comunque sia stato
+    destinato. La dichiarazione che il vincolo è calcolato sul periodo mentre il GSE lo
+    verifica a conguaglio annuale resta nel Markdown, dove c'era: in un CSV una riga di
+    nota sarebbe una riga che non è un pagamento.
+
+    L'avvertenza che questa voce conteneva — la chiave `totale` di `incentivo_periodo` è
+    `tip + arera` in euro e non va portata in centesimi da sola — **non è stata seguita a
+    mano**: la guardia di coerenza è ora in `rendiconto._componenti_cent`, una sola
+    funzione condivisa dalle due scritture. Due guardie separate per la stessa regola
+    significano che una delle due è scoperta, e l'export è quella che qualcuno importa in
+    un foglio senza rileggerla.
 15. ~~Coerenza degli arrotondamenti nel rendiconto~~ — *fatto 7 agosto 2026, esteso l'8*.
     La divergenza
     c'era ed era peggio del previsto: l'intestazione non arrotondava affatto in centesimi, ma

@@ -99,11 +99,14 @@ configurazione intera e non nasce già intestata a un punto di prelievo.
 `condivisione.partiziona_esente_fattore_f` adotta perciò lo stesso criterio del §1-bis,
 applicato ai prelievi invece che alle immissioni:
 
-    esente[h]     = EC[h] × Σ(prelievi dei POD esenti nell'ora h) / Σ(prelievi nell'ora h)
-    non_esente[h] = EC[h] − esente[h]
+    esente[h]     = EC[h] × Σ(prelievi dei POD esenti nell'ora h)     / Σ(prelievi nell'ora h)
+    non_esente[h] = EC[h] × Σ(prelievi dei POD non esenti nell'ora h) / Σ(prelievi nell'ora h)
 
-con lo stesso riparto in unità intere da 1e-6 kWh, quindi con l'invariante esatto
-`esente[h] + non_esente[h] = EC[h]`. Le due serie si tariffano **separatamente** — F = 0
+con lo stesso riparto in unità intere da 1e-6 kWh. Entrambe le parti si costruiscono
+**sommando le quote**, e nessuna delle due per differenza dall'altra: l'invariante
+`esente[h] + non_esente[h] = EC[h]` è così quello del §1-bis, esatto rispetto a EC[h]
+*quantizzato* a 1e-6 kWh, invece di un'uguaglianza imposta a una parte e da verificare
+sull'altra. Le due serie si tariffano **separatamente** — F = 0
 sulla prima, F sulla seconda — e i contributi si sommano; separatamente e non sui totali di
 periodo, perché `TIP_h` dipende dal prezzo zonale dell'ora.
 
@@ -168,7 +171,9 @@ immessa; prelievo coincidente con la condivisione oraria; quote uguali), più il
   GSE: serve una fonte anagrafica, come per il campo "impresa" del §4.
 - **Valore TIAD per anno**: 8,22 è il 2024. Serve la serie storica e la fonte ARERA puntuale.
 - **Formato reale export GSE** dall'area clienti: il mock è un'assunzione documentata
-  (`MOCK-GSE.md`). Non dipende da noi, dipende da una CER che ci passi un export vero.
+  (`MOCK-GSE.md`). Non dipende da noi, dipende da una CER che ci passi un export vero. Il
+  contratto verso il motore e le domande aperte sul formato stanno in
+  [`ADAPTER-GSE.md`](ADAPTER-GSE.md).
 - **Risoluzione di arrotondamento** dell'attribuzione per impianto (§1-bis): scelta nostra,
   da allineare se i tracciati GSE ne impongono una.
 
