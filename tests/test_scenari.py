@@ -12,6 +12,8 @@ Due gruppi di casi:
 Come negli altri file, ogni caso non banale è risolto a mano nel commento.
 Fonti delle formule in docs/FORMULE.md.
 """
+import csv
+import io
 from dataclasses import replace
 from decimal import ROUND_HALF_UP
 from decimal import Decimal as D
@@ -23,8 +25,9 @@ from cer_motore import mock, regole
 from cer_motore.__main__ import REGOLE as REGOLE_DEMO
 from cer_motore.__main__ import STATUTO_TOML, elabora
 from cer_motore.condivisione import energia_condivisa
-from cer_motore.rendiconto import rendiconto_markdown
+from cer_motore.rendiconto import INTESTAZIONE_CSV, rendiconto_csv, rendiconto_markdown
 from cer_motore.ripartizione import (
+    FONDO_ECCEDENTARIO,
     InsiemeIncentivato,
     in_centesimi,
     ripartisci,
@@ -323,6 +326,17 @@ def test_la_demo_produce_tutti_i_rendiconti(tmp_path, monkeypatch, capsys):
     assert "vincolo eccedentario **attivo**" in scritti["concentrata"]
     assert "200.23 €" in scritti["concentrata"]  # la quota eccedentaria della palestra
     assert "45.10 €" in scritti["paese"]         # quella del comune, nella fascia critica
+    # E i TRE export CSV accanto ai tre Markdown (roadmap 14): la demo è l'unico
+    # percorso reale che li attraversa, e una funzione che nessun flusso percorre è una
+    # funzione di cui non si sa se è cablata bene.
+    esportati = {n: (dati / f"rendiconto-{n}.csv").read_text(encoding="utf-8")
+                 for n in mock.SCENARI}
+    for nome, csv_testo in esportati.items():
+        assert csv_testo.startswith(";".join(INTESTAZIONE_CSV) + "\n"), nome
+        # Fine riga LF anche su Windows: il testo li porta già e la demo scrive con
+        # newline="". Senza, `write_text` tradurrebbe e uscirebbe \r\r\n.
+        assert "\r" not in csv_testo, nome
+    assert ";M03-palestra;membro;consumatore;no;0.00;30.50;200.23;" in esportati["concentrata"]
     # Tutto l'output della demo sta sotto ./data/, che è già ignorata da git: lanciarla
     # non deve lasciare file generati in mezzo ai sorgenti.
     assert (dati / "concentrata" / "misure.csv").exists()
@@ -539,3 +553,161 @@ def test_la_demo_passa_dalla_forma_aggregata_per_insiemi(tmp_path):
     ])
     assert totale["eccedentario_cent"] == atteso[1] == 24172
     assert atteso[0] + atteso[1] == totale["tip_cent"]
+
+
+# --- rendiconto in CSV (roadmap 14) ------------------------------------------------
+#
+# L'export per chi i numeri li deve rielaborare, il commercialista in testa (Risoluzione
+# AE 33/2024: il trattamento fiscale del riparto è fuori dal perimetro del motore, ma i
+# dati per deciderlo devono uscire da qui). I casi sono pinnati sui TRE scenari mock,
+# cioè sugli stessi totali già risolti a mano sopra: il CSV non è un secondo calcolo, è
+# una seconda scrittura dello stesso, e deve dire gli stessi centesimi del Markdown.
+
+
+def _righe_csv(testo: str) -> list[dict[str, str]]:
+    """Righe del rendiconto CSV come dizionari, senza passare dal disco."""
+    return list(csv.DictReader(io.StringIO(testo, newline=""), delimiter=";"))
+
+
+def _somma_colonna(righe: list[dict[str, str]], colonna: str) -> int:
+    """Somma una colonna di importi in CENTESIMI: il confronto si fa su interi."""
+    return sum(int((D(r[colonna]) * 100).quantize(D(1), ROUND_HALF_UP)) for r in righe)
+
+
+def test_il_rendiconto_csv_chiude_sui_totali_dei_tre_scenari(tmp_path):
+    # L'INVARIANTE SACRO, verificato sull'export invece che sull'esito: la somma della
+    # colonna `totale_eur` è TIP + ARERA del periodo, fondi statutari compresi. I tre
+    # totali sono quelli già risolti a mano nei casi end-to-end qui sopra:
+    #
+    #   equilibrata:  TIP 41827 + ARERA 2649 = 44476 cent = 444,76 €, eccedentario 0
+    #   paese:        TIP 105018 + ARERA 6647 = 111665 cent, di cui 5909 eccedentari
+    #   concentrata:  TIP 56716 + ARERA 3590 = 60306 cent, di cui 24172 eccedentari
+    #
+    # E la somma della colonna `quota_eccedentaria_eur` è l'importo eccedentario del
+    # periodo: è la colonna che dice quanto denaro ha una destinazione OBBLIGATA
+    # (Regole Operative pag. 41), e su cui si controlla che sia arrivato dove doveva.
+    attesi = {
+        "equilibrata": (41827, 2649, 0),
+        "paese": (105018, 6647, 5909),
+        "concentrata": (56716, 3590, 24172),
+    }
+    for nome, scenario in mock.SCENARI.items():
+        totale, esito = elabora(scenario, tmp_path / nome)
+        righe = _righe_csv(rendiconto_csv("giugno 2026", totale, esito, scenario.membri()))
+        tip_atteso, arera_atteso, ecc_atteso = attesi[nome]
+        totale_atteso = tip_atteso + arera_atteso
+        assert (totale["tip_cent"], totale["arera_cent"]) == (tip_atteso, arera_atteso), nome
+        assert _somma_colonna(righe, "totale_eur") == totale_atteso, nome
+        assert _somma_colonna(righe, "quota_eccedentaria_eur") == ecc_atteso, nome
+        assert totale["eccedentario_cent"] == ecc_atteso, nome
+        # Ogni riga chiude su se stessa: le quattro colonne di scomposizione sommano al
+        # totale di riga, altrimenti la scomposizione per titolo non è una scomposizione.
+        for r in righe:
+            per_titolo = sum(D(r[c]) for c in INTESTAZIONE_CSV[5:9])
+            assert per_titolo == D(r["totale_eur"]), (nome, r["voce"])
+
+
+def test_il_rendiconto_csv_ha_una_riga_per_destinatario_e_niente_altro(tmp_path):
+    # Rettangolare dalla prima riga all'ultima: nessuna riga di totali, nessun commento,
+    # nessuna riga vuota. È la ragione per cui SOMMA(totale_eur) è il totale ripartito e
+    # non il doppio, e per cui il file si può filtrare senza inciampare in una riga che
+    # non è un pagamento. Sullo scenario "concentrata": 5 membri + 1 fondo statutario.
+    totale, esito = elabora(mock.CONCENTRATA, tmp_path / "concentrata")
+    testo = rendiconto_csv("giugno 2026", totale, esito, mock.CONCENTRATA.membri())
+    righe = _righe_csv(testo)
+    assert len(righe) == len(testo.splitlines()) - 1 == 6
+    assert [r["voce"] for r in righe] == [
+        "M01-officina", "M02-market", "M03-palestra", "M04", "M05", "gestione"
+    ]
+    assert [r["tipo"] for r in righe] == ["membro"] * 5 + ["fondo_statutario"]
+    # I membri sono in ordine di identificativo, come nella tabella del Markdown: due
+    # esecuzioni sugli stessi dati devono dare lo stesso file byte per byte.
+    assert testo == rendiconto_csv("giugno 2026", totale, esito, mock.CONCENTRATA.membri())
+
+    # Le colonne sono quelle dichiarate, in quell'ordine, e l'ordine è contratto: chi
+    # importa questo file lo rifà ogni mese per vent'anni con lo stesso foglio.
+    assert testo.splitlines()[0] == ";".join(INTESTAZIONE_CSV)
+    assert INTESTAZIONE_CSV[:5] == ("periodo", "voce", "tipo", "ruolo", "impresa")
+
+
+def test_il_csv_e_il_markdown_dicono_gli_stessi_importi(tmp_path):
+    # Due scritture della stessa sostanza. Se divergono, una delle due mente, e non si
+    # sa quale: qui si confrontano riga per riga sullo scenario in cui il vincolo
+    # eccedentario scatta in pieno, cioè dove ci sono tre colonne diverse da zero.
+    totale, esito = elabora(mock.CONCENTRATA, tmp_path / "concentrata")
+    membri = mock.CONCENTRATA.membri()
+    righe = _righe_csv(rendiconto_csv("giugno 2026", totale, esito, membri))
+    testo_md = rendiconto_markdown("giugno 2026", totale, esito, membri)
+    for r in righe:
+        if r["tipo"] != "membro":
+            continue
+        # Riga Markdown: | membro | ruolo | qp € | qc € | qe € | totale € |
+        attesa = (f"| {r['voce']} | {r['ruolo']} | {r['quota_produttore_eur']} € | "
+                  f"{r['quota_consumatore_eur']} € | {r['quota_eccedentaria_eur']} € | "
+                  f"{r['totale_eur']} € |")
+        assert attesa in testo_md
+    # Il fondo statutario compare in entrambi, in forme diverse ma con lo stesso numero.
+    fondo = [r for r in righe if r["tipo"] == "fondo_statutario"][0]
+    assert f"gestione: {fondo['quota_fondo_eur']} €" in testo_md
+    # La colonna `impresa` è invece SOLO del CSV, e serve al commercialista: l'officina e
+    # il supermercato sono imprese, la palestra comunale e le due famiglie no. È anche
+    # ciò che spiega la colonna dell'eccedentario, che a loro resta a zero.
+    imprese = {r["voce"]: r["impresa"] for r in righe if r["tipo"] == "membro"}
+    assert imprese == {"M01-officina": "si", "M02-market": "si",
+                       "M03-palestra": "no", "M04": "no", "M05": "no"}
+    assert all(D(r["quota_eccedentaria_eur"]) == 0
+               for r in righe if r["tipo"] == "membro" and r["impresa"] == "si")
+
+
+def test_il_fondo_delleccedentario_sta_nella_colonna_delleccedentario():
+    # Le Regole Operative pag. 41 danno all'importo eccedentario UNA destinazione con due
+    # forme: "ai soli consumatori diversi dalle imprese e\\o utilizzato per finalità
+    # sociali". Quando nella CER non ci sono consumatori idonei — qui l'unico consumatore
+    # è un'impresa — il riparto lo mette nel fondo riservato `finalita_sociali`, e
+    # nell'export quei centesimi restano nella colonna dell'eccedentario, non in quella
+    # dei fondi statutari: chi somma `quota_eccedentaria_eur` deve trovare l'importo
+    # eccedentario del periodo comunque sia stato destinato.
+    #   base 9000 + eccedentario 1000 = 10000 cent; nessun fondo di statuto, 50/50 fra i
+    #   blocchi, un membro per blocco → P 4500, C 4500, finalita_sociali 1000.
+    membri = {"P": {"ruolo": "produttore", "impresa": True},
+              "C": {"ruolo": "consumatore", "impresa": True}}
+    esito = ripartisci(REGOLE_META, 9000, 1000, {"P": D(10)}, {"C": D(10)}, membri)
+    assert esito["_fondi"] == {FONDO_ECCEDENTARIO: 1000}
+    righe = _righe_csv(rendiconto_csv(
+        "test", {"tip": D(100), "arera": D(0), "ec_tot_kwh": D(0)}, esito, membri))
+    fondo = [r for r in righe if r["voce"] == FONDO_ECCEDENTARIO][0]
+    assert fondo["tipo"] == "fondo_eccedentario"
+    assert (fondo["quota_eccedentaria_eur"], fondo["quota_fondo_eur"]) == ("10.00", "0.00")
+    assert _somma_colonna(righe, "quota_eccedentaria_eur") == 1000
+    assert _somma_colonna(righe, "quota_fondo_eur") == 0
+    assert _somma_colonna(righe, "totale_eur") == 10000
+
+
+def test_il_rendiconto_csv_rifiuta_un_esito_che_non_chiude():
+    # Stessa guardia del Markdown, e non una copia: entrambi passano da
+    # `_componenti_cent`. L'export è la scrittura che qualcuno importa in un foglio senza
+    # rileggerla, quindi è quella in cui un riparto che non chiude farebbe più danno.
+    # Caso identico a quello del Markdown: 301 centesimi ripartiti contro i 302 che
+    # in_centesimi(1,005) + in_centesimi(2,005) pretende.
+    esito = _esito_da(301)
+    with pytest.raises(ValueError, match="rendiconto incoerente"):
+        rendiconto_csv(
+            "test", {"tip": D("1.005"), "arera": D("2.005"), "ec_tot_kwh": D(0)},
+            esito, MEMBRI_MINIMI,
+        )
+
+
+def test_gli_importi_del_csv_sono_numeri_e_non_testo():
+    # `comune.in_euro` produce "1.51 €", che a video va benissimo e in una colonna
+    # numerica è testo: chi la somma in un foglio ottiene zero. Il CSV usa il punto
+    # decimale, due decimali fissi e nessun simbolo di valuta, come i CSV di misura del
+    # mock (`data_ora;pod;tipo;energia_kwh`), che è il solo dialetto già in uso.
+    righe = _righe_csv(rendiconto_csv(
+        "test", {"tip": D("1.005"), "arera": D("2.005"), "ec_tot_kwh": D(0)},
+        _esito_da(302), MEMBRI_MINIMI,
+    ))
+    assert [r["totale_eur"] for r in righe] == ["1.51", "1.51"]
+    assert all("€" not in v and "," not in v for r in righe for v in r.values())
+    # E i decimali ci sono anche quando sono zero: una colonna con "0" e "0.00" mescolati
+    # è una colonna che qualche importatore legge come testo.
+    assert [r["quota_eccedentaria_eur"] for r in righe] == ["0.00", "0.00"]

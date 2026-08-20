@@ -17,8 +17,9 @@ grandi. Tre rendiconti a video sarebbero un muro di testo, e chi ha quindici min
 smette di leggere prima della fine; i tre file completi restano su disco.
 
 Tutto ciò che la demo scrive sta sotto ./data/, che è la sua cartella usa-e-getta: i CSV
-in data/<scenario>/, i rendiconti completi di tutti e tre gli scenari in
-data/rendiconto-<scenario>.md. Una sola cartella da cancellare, e già ignorata da git.
+di misura in data/<scenario>/, i rendiconti completi di tutti e tre gli scenari in
+data/rendiconto-<scenario>.md e, degli stessi tre, l'export per il commercialista in
+data/rendiconto-<scenario>.csv. Una sola cartella da cancellare, e già ignorata da git.
 """
 import sys
 from decimal import Decimal
@@ -28,7 +29,7 @@ from . import mock, regole as mod_regole
 from .comune import in_euro
 from .condivisione import alloca_oraria, contributo_prelievo_coincidente, energia_condivisa
 from .mock import Scenario
-from .rendiconto import rendiconto_markdown
+from .rendiconto import rendiconto_csv, rendiconto_markdown
 from .ripartizione import (
     InsiemeIncentivato,
     in_centesimi,
@@ -199,9 +200,18 @@ def main() -> None:
     # confronto si legge come una scala, da "non scatta" a "si porta via il 42,6%".
     for scenario in mock.SCENARI.values():
         totale, esito = elabora(scenario, dati / scenario.nome)
-        testo = rendiconto_markdown(f"{PERIODO} — {scenario.titolo}", totale, esito,
-                                    scenario.membri())
+        intestazione = f"{PERIODO} — {scenario.titolo}"
+        membri = scenario.membri()
+        testo = rendiconto_markdown(intestazione, totale, esito, membri)
         (dati / f"rendiconto-{scenario.nome}.md").write_text(testo, encoding="utf-8")
+        # L'export CSV passa dagli stessi tre scenari, e non solo dai test: una funzione
+        # che nessun percorso reale attraversa è una funzione di cui non si sa se è
+        # cablata bene. `newline=""` perché il testo porta già i suoi fine riga.
+        # Il periodo è quello breve e non l'intestazione del Markdown: nel CSV si ripete
+        # su ogni riga, e il titolo dello scenario più lungo è di 84 caratteri.
+        (dati / f"rendiconto-{scenario.nome}.csv").write_text(
+            rendiconto_csv(PERIODO, totale, esito, membri), encoding="utf-8", newline=""
+        )
         risultati.append((scenario, totale, esito))
         rendiconti[scenario.nome] = testo
 

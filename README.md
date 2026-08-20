@@ -42,7 +42,7 @@ python3 -m venv .venv                                  # su Windows: python -m v
 
 La demo genera un mese di misure orarie, calcola energia condivisa, TIP con cap e correttivo
 geografico, valorizzazione ARERA, applica regole statutarie dichiarative (fondi, quote
-produttori/consumatori) e scrive un rendiconto per membro.
+produttori/consumatori) e scrive un rendiconto per membro, in Markdown e in CSV.
 
 Gli scenari mock sono **tre, con lo stesso statuto**: cambia solo la configurazione fisica, e
 con essa il rapporto fra energia condivisa ed energia immessa, che è ciò che decide se scatta
@@ -69,8 +69,16 @@ inosservato, perché l'importo è piccolo e nessun numero appare assurdo. Il rap
 
 A video la demo stampa il confronto fra i tre e **un solo rendiconto per esteso**, quello di
 `concentrata`: tre rendiconti sarebbero un muro di testo. Tutto ciò che scrive sta sotto
-`data/`: i CSV in `data/<scenario>/`, i rendiconti completi di tutti e tre in
+`data/`: i CSV di misura in `data/<scenario>/`, i rendiconti completi di tutti e tre in
 `data/rendiconto-<scenario>.md`. Una sola cartella usa-e-getta, da cancellare quando si vuole.
+
+Di ogni rendiconto la demo scrive anche la versione **in CSV**,
+`data/rendiconto-<scenario>.csv`: stessi centesimi, una riga per destinatario e l'importo
+scomposto per titolo — quota da produttore, quota da consumatore, quota eccedentaria, fondo —
+più il ruolo del socio e se è un'impresa. È la forma che serve a chi i numeri li deve
+rielaborare invece che leggerli, il commercialista in testa: il trattamento fiscale del
+riparto (Risoluzione AE 33/2024) è fuori dal perimetro del motore, ma i dati per deciderlo
+escono da qui. Separatore `;` e punto decimale, come i CSV di misura.
 
 ## Principi
 
