@@ -3,17 +3,23 @@
 Deterministico (seed fisso per scenario): una CER fittizia romagnola, un mese di misure
 orarie. Unico modulo (con __main__) autorizzato a fare I/O.
 
-Gli scenari sono tre, con lo STESSO formato di file e le stesse assunzioni di
+Gli scenari sono quattro, con lo STESSO formato di file e le stesse assunzioni di
 docs/MOCK-GSE.md: cambia solo la composizione fisica della configurazione, cioè quanti
-impianti, quanto grandi e chi consuma. Servono perché il rapporto fra energia condivisa
-ed energia immessa — che governa il vincolo dell'importo eccedentario (docs/FORMULE.md
-§4) — dipende proprio da quella composizione:
+impianti, quanto grandi, chi consuma e — per `CUMULO` — chi ha preso un contributo in
+conto capitale. Servono perché il rapporto fra energia condivisa ed energia immessa — che
+governa il vincolo dell'importo eccedentario (docs/FORMULE.md §4) — dipende proprio da
+quella composizione:
 
 - `EQUILIBRATA`: CER di quartiere, 2 impianti FV e 8 utenze miste. Rapporto EC/EI ≈ 0,27,
-  molto sotto la soglia del 55%: il vincolo eccedentario NON scatta.
+  molto sotto la soglia del 55% (sola tariffa premio): il vincolo eccedentario NON scatta.
+- `CUMULO`: CER mista, un solo impianto FV che ha preso un contributo in conto capitale
+  (fattore F = 0,30) e cinque utenze, tre esenti dal fattore F e due no. Rapporto
+  EC/EI ≈ 0,49 — sotto la soglia del 55% ma SOPRA quella del 45% che si applica agli
+  impianti in cumulo (Appendice B §4 pag. 161): il vincolo scatta qui e non scatterebbe
+  se lo stesso impianto accedesse alla sola tariffa premio, a parità di rapporto.
 - `PAESE`: CER di paese, produzione di poco superiore ai consumi diurni. Rapporto
-  EC/EI ≈ 0,60, appena sopra la soglia: il vincolo scatta ma morde poco, il 5,6% della
-  tariffa premio.
+  EC/EI ≈ 0,60, appena sopra la soglia del 55%: il vincolo scatta ma morde poco, il 5,6%
+  della tariffa premio.
 - `CONCENTRATA`: CER artigianale, un solo impianto FV piccolo e pochi grandi consumatori
   diurni. Rapporto EC/EI oltre il 90%: il vincolo eccedentario scatta in pieno, il 42,6%.
 
@@ -27,6 +33,12 @@ progetto abbia trovato: fino al 7 ago 2026 l'importo eccedentario era calcolato 
 forma sbaglia tanto più quanto più il rapporto è vicino alla soglia (+65% al rapporto di
 questo scenario, +11% a rapporto 0,90). Con i soli scenari a 0,27 e 0,98 quella fascia
 non era attraversata da nessun percorso end-to-end.
+
+`CUMULO` esiste perché nessuno scenario precedente aveva un impianto in cumulo con
+contributo in conto capitale: `condivisione.partiziona_esente_fattore_f` e la soglia del
+45% (`ripartizione.InsiemeIncentivato.cumulo_conto_capitale`) erano scritte, testate a
+sé, ma non attraversate da nessun percorso end-to-end — la stessa specie di difetto che
+le voci 6 e 8 di docs/ROADMAP.md avevano già trovato altrove due volte.
 """
 import csv
 import random
@@ -35,7 +47,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from .tariffe import CORRETTIVO_FV  # zone del correttivo geografico: sud, centro, nord
+from .tariffe import CORRETTIVO_FV, FATTORE_CONTO_CAPITALE_MAX  # correttivo geografico, F
 
 SEED = 42
 
@@ -90,12 +102,23 @@ class Impianto:
     il correttivo geografico FC_zonale (docs/FORMULE.md §2). `membro` è l'id nell'anagrafica
     della CER: non fa parte dell'export GSE (che conosce i POD), ma sta qui perché deve
     restare in sincronia con la lista dei POD, e tenerlo altrove è come si sfasano.
+
+    `fattore_conto_capitale` è F, la decurtazione per cumulo con un contributo in conto
+    capitale (0 ≤ F ≤ 0,50; Appendice B §3 pag. 161, `tariffe.tip_unitaria`). Default 0:
+    la maggioranza degli impianti non cumula. Un impianto con F > 0 sta nell'insieme "j"
+    a soglia 45% del vincolo eccedentario (`ripartizione.InsiemeIncentivato.
+    cumulo_conto_capitale`), non in quello a soglia 55%; e la sua energia condivisa va
+    partizionata in esente/non esente prima di tariffarla (`condivisione.
+    partiziona_esente_fattore_f`), perché F non si applica alla parte esente
+    (Regole Operative pag. 41). `Scenario.pod_esenti_fattore_f` dice quali PUNTI DI
+    PRELIEVO — non impianti — sono quella parte.
     """
 
     pod: str
     membro: str
     potenza_kw: Decimal
     fotovoltaico: bool = True
+    fattore_conto_capitale: Decimal = Decimal(0)
 
 
 @dataclass(frozen=True)
@@ -119,6 +142,14 @@ class Scenario:
 
     `imprese` elenca gli id dei membri che sono imprese: serve al vincolo dell'importo
     eccedentario, che va ai soli consumatori diversi dalle imprese (docs/FORMULE.md §4).
+
+    `pod_esenti_fattore_f` elenca i PUNTI DI PRELIEVO (non gli impianti) esenti dal
+    fattore F: enti territoriali, enti religiosi, enti del terzo settore, enti di
+    protezione ambientale e persone fisiche (Regole Operative pag. 41). Ha senso solo se
+    almeno un impianto ha `fattore_conto_capitale > 0` — altrimenti non c'è F da cui
+    esentare nessuno — ma non è un errore lasciarlo vuoto anche in quel caso: significa
+    che nella CER non c'è nessun titolare delle cinque categorie esenti, e tutta
+    l'energia dell'impianto in cumulo prende la decurtazione per intero.
     """
 
     nome: str
@@ -128,6 +159,7 @@ class Scenario:
     impianti: tuple[Impianto, ...]
     utenze: tuple[Utenza, ...]
     imprese: frozenset[str] = frozenset()
+    pod_esenti_fattore_f: frozenset[str] = frozenset()
     seed: int = SEED
 
     def __post_init__(self) -> None:
@@ -139,6 +171,12 @@ class Scenario:
         for i in self.impianti:
             if i.potenza_kw <= 0:
                 raise ValueError(f"scenario {self.nome!r}: potenza non positiva su {i.pod}")
+            if not Decimal(0) <= i.fattore_conto_capitale <= FATTORE_CONTO_CAPITALE_MAX:
+                raise ValueError(
+                    f"scenario {self.nome!r}: fattore conto capitale "
+                    f"{i.fattore_conto_capitale} fuori dall'intervallo "
+                    f"0–{FATTORE_CONTO_CAPITALE_MAX} su {i.pod} (Regole Operative pag. 41)"
+                )
         for u in self.utenze:
             if u.profilo not in PROFILI_CONSUMO:
                 raise ValueError(
@@ -163,6 +201,16 @@ class Scenario:
         ignoti = self.imprese - set(self.membri())
         if ignoti:
             raise ValueError(f"scenario {self.nome!r}: imprese non fra i membri: {sorted(ignoti)}")
+        # `pod_esenti_fattore_f` sono PUNTI DI PRELIEVO, non impianti: un id scritto
+        # male qui non darebbe un KeyError leggibile in `elabora` (che lo passa a
+        # `partiziona_esente_fattore_f`, guardia identica) ma è più onesto fermarlo
+        # subito, alla stessa fonte anagrafica che lo dichiara.
+        ignoti_esenti = self.pod_esenti_fattore_f - {u.pod for u in self.utenze}
+        if ignoti_esenti:
+            raise ValueError(
+                f"scenario {self.nome!r}: pod_esenti_fattore_f non fra i punti di "
+                f"prelievo: {sorted(ignoti_esenti)}"
+            )
 
     def potenze_kw(self) -> dict[str, Decimal]:
         """POD di produzione -> potenza in kW."""
@@ -171,6 +219,10 @@ class Scenario:
     def fotovoltaici(self) -> dict[str, bool]:
         """POD di produzione -> se l'impianto è fotovoltaico (correttivo FC_zonale)."""
         return {i.pod: i.fotovoltaico for i in self.impianti}
+
+    def fattori_conto_capitale(self) -> dict[str, Decimal]:
+        """POD di produzione -> fattore F (0 se l'impianto non è in cumulo)."""
+        return {i.pod: i.fattore_conto_capitale for i in self.impianti}
 
     def membro_di(self) -> dict[str, str]:
         """POD (di produzione o di prelievo) -> id del membro che lo possiede."""
@@ -198,7 +250,7 @@ class Scenario:
         return out
 
 
-# --- I tre scenari -----------------------------------------------------------------
+# --- I quattro scenari --------------------------------------------------------------
 
 EQUILIBRATA = Scenario(
     nome="equilibrata",
@@ -277,9 +329,55 @@ CONCENTRATA = Scenario(
     imprese=frozenset({"M01-officina", "M02-market"}),
 )
 
-# In ordine di rapporto EC/EI crescente: 0,27 · 0,60 · 0,98. La demo li elabora in
-# quest'ordine, così la tabella di confronto si legge come una scala.
-SCENARI = {s.nome: s for s in (EQUILIBRATA, PAESE, CONCENTRATA)}
+CUMULO = Scenario(
+    nome="cumulo",
+    titolo="CER mista: un FV comunale da 47 kW in cumulo con un contributo in conto "
+           "capitale (F=0,30), 5 utenze fra esenti e non dal fattore F",
+    zona_mercato="NORD",
+    zona_tariffa="nord",
+    impianti=(
+        # L'unico impianto del mock che cumula la tariffa premio con un contributo in
+        # conto capitale (Appendice B §3 pag. 161): F = 0,30, a metà del suo intervallo
+        # 0-0,50. Il comune lo possiede ED è utente della palestra che ci sta sotto: è
+        # quindi un prosumer, come in PAESE, ma qui è anche l'unico impianto in cumulo.
+        # 47 kW è la taglia scelta perché il rapporto EC/EI che ne segue (§ sotto) cade
+        # nella fascia 0,45-0,55: sopra la soglia del cumulo (45%) ma sotto quella della
+        # sola tariffa premio (55%), così il vincolo eccedentario scatta qui SOLO perché
+        # l'impianto è in cumulo — con la sola tariffa, allo stesso rapporto, non
+        # scatterebbe. È la dimostrazione che le due soglie sono indipendenti, non solo
+        # un secondo numero.
+        Impianto("IT001E0000401S", "M01-comune", Decimal("47"),
+                 fattore_conto_capitale=Decimal("0.30")),
+    ),
+    utenze=(
+        Utenza("IT001E0000402T", "M01-comune", "palestra"),
+        Utenza("IT001E0000403U", "M02", "residenziale"),
+        Utenza("IT001E0000404V", "M03", "residenziale"),
+        Utenza("IT001E0000405W", "M04-studio", "ufficio"),
+        Utenza("IT001E0000406X", "M05-bar", "bar"),
+    ),
+    # Imprese: lo studio e il bar. Il comune (ente territoriale) e le due famiglie non
+    # lo sono, e sono anche loro i tre punti di prelievo esenti dal fattore F qui sotto:
+    # la stessa persona giuridica che la norma esenta dal fattore F (Regole Operative
+    # pag. 41) è, per PAESE e CONCENTRATA, anche chi riceve l'importo eccedentario. Non
+    # è una coincidenza del motore — sono due liste scritte a mano — ma nemmeno un
+    # caso: le cinque categorie esenti dal fattore F sono un sottoinsieme forte dei
+    # "consumatori diversi dalle imprese" del §4.
+    imprese=frozenset({"M04-studio", "M05-bar"}),
+    # Il comune (ente territoriale) e le due famiglie (persone fisiche): tre delle
+    # cinque categorie esenti dal fattore F, Regole Operative pag. 41. Studio e bar,
+    # imprese, non lo sono: la loro quota di energia condivisa prende la decurtazione
+    # TIP × (1 − F) per intero.
+    pod_esenti_fattore_f=frozenset(
+        {"IT001E0000402T", "IT001E0000403U", "IT001E0000404V"}
+    ),
+)
+
+# In ordine di rapporto EC/EI crescente: 0,27 · 0,49 · 0,60 · 0,98. La demo li elabora
+# in quest'ordine, così la tabella di confronto si legge come una scala — e CUMULO,
+# nonostante il rapporto più basso di PAESE, è quello con la soglia più bassa (45%
+# contro 55%): la tabella lo dice, la scala dei rapporti no.
+SCENARI = {s.nome: s for s in (EQUILIBRATA, CUMULO, PAESE, CONCENTRATA)}
 
 
 # --- Generazione e lettura ---------------------------------------------------------

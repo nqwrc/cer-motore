@@ -1,24 +1,29 @@
 """Demo end-to-end su dati mock: python -m cer_motore
 
-Elabora TRE scenari mock (docs/MOCK-GSE.md) con lo stesso statuto, per mostrare il
+Elabora QUATTRO scenari mock (docs/MOCK-GSE.md) con lo stesso statuto, per mostrare il
 comportamento del vincolo dell'importo eccedentario al variare del solo dato fisico:
 
 - `equilibrata`: rapporto energia condivisa / energia immessa 0,27, sotto la soglia del
-  55%, il vincolo non scatta e la colonna "Quota eccedentaria" è a zero;
-- `paese`: rapporto 0,61, appena sopra la soglia; il vincolo scatta ma prende il 5,6%
-  della tariffa premio, non di più;
+  55% (sola tariffa premio), il vincolo non scatta e la colonna "Quota eccedentaria" è
+  a zero;
+- `cumulo`: rapporto 0,49, sopra la soglia del 45% che si applica agli impianti in
+  cumulo con un contributo in conto capitale ma SOTTO quella del 55% della sola
+  tariffa premio — il vincolo scatta qui perché la soglia dell'insieme è quella più
+  bassa, non perché il rapporto sia alto: prende il 3,8% della tariffa premio;
+- `paese`: rapporto 0,61, appena sopra la soglia del 55%; il vincolo scatta ma prende
+  il 5,6% della tariffa premio, non di più;
 - `concentrata`: rapporto 0,98, il vincolo scatta in pieno e si porta via il 42,6% del
   TIP a favore dei soli consumatori diversi dalle imprese (Regole Operative pag. 41).
 
-Cosa stampa, e perché non tutto: la TABELLA di confronto dei tre — che è dove la
-progressione si legge in tre righe — e UN SOLO rendiconto per esteso, quello di
+Cosa stampa, e perché non tutto: la TABELLA di confronto dei quattro — che è dove la
+progressione si legge in poche righe — e UN SOLO rendiconto per esteso, quello di
 `concentrata`, dove la parte più delicata del motore si vede girare con i numeri più
-grandi. Tre rendiconti a video sarebbero un muro di testo, e chi ha quindici minuti
-smette di leggere prima della fine; i tre file completi restano su disco.
+grandi. Quattro rendiconti a video sarebbero un muro di testo, e chi ha quindici minuti
+smette di leggere prima della fine; i quattro file completi restano su disco.
 
 Tutto ciò che la demo scrive sta sotto ./data/, che è la sua cartella usa-e-getta: i CSV
-di misura in data/<scenario>/, i rendiconti completi di tutti e tre gli scenari in
-data/rendiconto-<scenario>.md e, degli stessi tre, l'export per il commercialista in
+di misura in data/<scenario>/, i rendiconti completi di tutti e quattro gli scenari in
+data/rendiconto-<scenario>.md e, degli stessi quattro, l'export per il commercialista in
 data/rendiconto-<scenario>.csv. Una sola cartella da cancellare, e già ignorata da git.
 """
 import sys
@@ -27,7 +32,12 @@ from pathlib import Path
 
 from . import mock, regole as mod_regole
 from .comune import in_euro
-from .condivisione import alloca_oraria, contributo_prelievo_coincidente, energia_condivisa
+from .condivisione import (
+    alloca_oraria,
+    contributo_prelievo_coincidente,
+    energia_condivisa,
+    partiziona_esente_fattore_f,
+)
 from .mock import Scenario
 from .rendiconto import rendiconto_csv, rendiconto_markdown
 from .ripartizione import (
@@ -36,13 +46,14 @@ from .ripartizione import (
     ripartisci,
     scomponi_eccedentario_insiemi,
 )
-from .tariffe import SOGLIA_ECCEDENTARIO_SOLA_TARIFFA, incentivo_periodo
+from .tariffe import incentivo_periodo
 
 MESE = "giugno 2026"
 PERIODO = f"{MESE} (dati mock)"
 
-# Statuto identico nei tre scenari: così l'unica differenza fra i tre rendiconti viene
-# dal dato fisico (chi produce, chi consuma e quando), non dalle regole di riparto.
+# Statuto identico nei quattro scenari: così l'unica differenza fra i quattro rendiconti
+# viene dal dato fisico (chi produce, chi consuma, quando, e — solo per `cumulo` — chi
+# ha preso un contributo in conto capitale), non dalle regole di riparto.
 #
 # È scritto in TOML e passa dalla stessa validazione di un file vero (`regole.da_testo`,
 # che è pura e non tocca il disco): la demo percorre così la strada che percorrerà una
@@ -71,10 +82,15 @@ def elabora(scenario: Scenario, cartella_dati: Path) -> tuple[dict, dict]:
     l'energia immessa e la soglia usata, e il riparto per membro in centesimi.
 
     Il vincolo eccedentario passa dalla forma aggregata per insiemi delle Regole
-    Operative pag. 42, anche se qui l'insieme è UNO SOLO: nessuno degli scenari mock
-    ha impianti in cumulo con contributo in conto capitale, quindi l'insieme a soglia
-    45% sarebbe vuoto. Ci passa lo stesso di proposito — una funzione che nessun
-    percorso reale attraversa è una funzione di cui non si sa se è cablata bene.
+    Operative pag. 42, in DUE secchi — `sola_tariffa` (soglia 55%) e
+    `cumulo_conto_capitale` (soglia 45%) — a seconda che il singolo impianto abbia o
+    no un fattore F: uno scenario mock (`mock.CUMULO`) popola davvero il secondo, non
+    solo il primo come accadeva fino al 20 agosto 2026, quando l'insieme a soglia 45%
+    era raggiungibile solo dai test. Un impianto in cumulo (F > 0) attraversa anche
+    `condivisione.partiziona_esente_fattore_f` PRIMA di tariffare: la sua energia
+    condivisa si divide in esente e non esente dal fattore F (Regole Operative
+    pag. 41), le due parti si tariffano separatamente — F = 0 sulla prima, F sulla
+    seconda — e i contributi si sommano (`docs/FORMULE.md` §2-bis).
     """
     f_mis, f_pz = mock.genera(cartella_dati, scenario=scenario)
     immissioni, prelievi, prezzi = mock.carica(f_mis, f_pz)
@@ -83,27 +99,85 @@ def elabora(scenario: Scenario, cartella_dati: Path) -> tuple[dict, dict]:
 
     # attribuzione oraria dell'EC agli impianti pro-quota immissioni → incentivo per impianto
     potenze, fotovoltaici = scenario.potenze_kw(), scenario.fotovoltaici()
+    fattori_f = scenario.fattori_conto_capitale()
     totale = {"tip": Decimal(0), "arera": Decimal(0), "totale": Decimal(0), "ec_tot_kwh": Decimal(0)}
+    # Un secchio per insieme "j": accumula l'energia condivisa, l'energia immessa e il
+    # TIP (Decimal, non ancora in centesimi) degli impianti che gli appartengono. Un
+    # impianto sta nel secchio "cumulo" se e solo se F > 0 — la STESSA condizione che
+    # decide se la sua energia condivisa va partizionata prima di essere tariffata.
+    dati_sola = {"ec": Decimal(0), "imm": Decimal(0), "tip": Decimal(0)}
+    dati_cumulo = {"ec": Decimal(0), "imm": Decimal(0), "tip": Decimal(0)}
     for pod, ec_pod in alloca_oraria(immissioni, ec).items():
-        inc = incentivo_periodo(ec_pod, prezzi, potenze[pod],
-                                zona=scenario.zona_tariffa, fotovoltaico=fotovoltaici[pod])
+        kw, fv, f = potenze[pod], fotovoltaici[pod], fattori_f[pod]
+        imm_pod = sum(immissioni[pod], Decimal(0))
+        if f > 0:
+            # `partiziona_esente_fattore_f` vuole il perimetro COMPLETO dei punti di
+            # prelievo (PRECONDIZIONE SUL PERIMETRO nel suo docstring): `prelievi` qui è
+            # già quello, non un sottoinsieme filtrato per impianto.
+            esente, non_esente = partiziona_esente_fattore_f(
+                prelievi, ec_pod, scenario.pod_esenti_fattore_f
+            )
+            a = incentivo_periodo(esente, prezzi, kw, zona=scenario.zona_tariffa,
+                                  fotovoltaico=fv, fattore_conto_capitale=Decimal(0))
+            b = incentivo_periodo(non_esente, prezzi, kw, zona=scenario.zona_tariffa,
+                                  fotovoltaico=fv, fattore_conto_capitale=f)
+            inc = {k: a[k] + b[k] for k in a}
+            dati = dati_cumulo
+        else:
+            inc = incentivo_periodo(ec_pod, prezzi, kw, zona=scenario.zona_tariffa,
+                                    fotovoltaico=fv)
+            dati = dati_sola
         for k in totale:
             totale[k] += inc[k]
+        dati["ec"] += inc["ec_tot_kwh"]
+        dati["imm"] += imm_pod
+        dati["tip"] += inc["tip"]
 
-    # ripartizione. Le due componenti vanno portate in centesimi SEPARATAMENTE e prima di
-    # ripartirle: è la stessa quantità su cui il rendiconto costruisce l'intestazione.
+    # ripartizione. Ogni insieme porta i PROPRI centesimi, arrotondati dal proprio
+    # Decimal: sommare prima e arrotondare dopo è la stessa strada già chiusa in
+    # roadmap 15 per TIP e ARERA, e per lo stesso motivo — `in_centesimi(a) +
+    # in_centesimi(b)` e `in_centesimi(a + b)` divergono quando entrambe cadono su
+    # mezzo centesimo.
     imm_tot = sum(sum(s) for s in immissioni.values())
-    tip_cent, arera_cent = in_centesimi(totale["tip"]), in_centesimi(totale["arera"])
-    base, ecc = scomponi_eccedentario_insiemi([
-        InsiemeIncentivato.sola_tariffa(totale["ec_tot_kwh"], imm_tot, tip_cent),
-    ])
+    arera_cent = in_centesimi(totale["arera"])
+    insiemi = []
+    tip_cent_sola = tip_cent_cumulo = 0
+    if dati_sola["imm"] > 0:
+        tip_cent_sola = in_centesimi(dati_sola["tip"])
+        insiemi.append(
+            InsiemeIncentivato.sola_tariffa(dati_sola["ec"], dati_sola["imm"], tip_cent_sola)
+        )
+    if dati_cumulo["imm"] > 0:
+        tip_cent_cumulo = in_centesimi(dati_cumulo["tip"])
+        insiemi.append(
+            InsiemeIncentivato.cumulo_conto_capitale(
+                dati_cumulo["ec"], dati_cumulo["imm"], tip_cent_cumulo
+            )
+        )
+    base, ecc = scomponi_eccedentario_insiemi(insiemi)
     base += arera_cent  # la valorizzazione ARERA non è "eccedentaria"
+
     totale["immissioni_tot_kwh"] = imm_tot
-    totale["soglia_eccedentario"] = SOGLIA_ECCEDENTARIO_SOLA_TARIFFA
     totale["eccedentario_cent"] = ecc
     # Centesimi autorevoli per il rendiconto: li ha decisi qui la scomposizione per
     # insieme, e il rendiconto non deve riottenerli dai Decimal (vedi rendiconto.py).
-    totale["tip_cent"], totale["arera_cent"] = tip_cent, arera_cent
+    totale["tip_cent"], totale["arera_cent"] = tip_cent_sola + tip_cent_cumulo, arera_cent
+    # La colonna "Soglia" del confronto ha UN valore per scenario: vale finché ogni
+    # scenario mock ha impianti di un solo insieme, come i quattro attuali. Uno
+    # scenario che mescolasse sola tariffa e cumulo avrebbe due soglie contemporanee,
+    # e questa riga smetterebbe di avere una risposta univoca: si ferma piuttosto che
+    # sceglierne una a caso.
+    if len(insiemi) != 1:
+        raise NotImplementedError(
+            f"scenario {scenario.nome!r}: {len(insiemi)} insiemi incentivati non vuoti "
+            "(ne serve esattamente 1: impianti a sola tariffa OPPURE impianti in cumulo "
+            "con conto capitale, mai zero — con almeno un impianto valido l'energia "
+            "immessa non può essere nulla sull'intero periodo — e mai entrambi insieme). "
+            "La colonna 'Soglia' del confronto e l'intestazione del rendiconto assumono "
+            "un insieme solo per scenario: nessuno dei quattro scenari mock lo viola, e "
+            "la demo non è ancora pronta a uno che lo faccia."
+        )
+    totale["soglia_eccedentario"] = insiemi[0].soglia
 
     # I pesi si aggregano per MEMBRO, non per POD: un membro può avere più punti di
     # connessione (l'officina dello scenario "concentrata" ne ha due, uno di immissione
@@ -204,9 +278,9 @@ def main() -> None:
         membri = scenario.membri()
         testo = rendiconto_markdown(intestazione, totale, esito, membri)
         (dati / f"rendiconto-{scenario.nome}.md").write_text(testo, encoding="utf-8")
-        # L'export CSV passa dagli stessi tre scenari, e non solo dai test: una funzione
-        # che nessun percorso reale attraversa è una funzione di cui non si sa se è
-        # cablata bene. `newline=""` perché il testo porta già i suoi fine riga.
+        # L'export CSV passa dagli stessi quattro scenari, e non solo dai test: una
+        # funzione che nessun percorso reale attraversa è una funzione di cui non si sa
+        # se è cablata bene. `newline=""` perché il testo porta già i suoi fine riga.
         # Il periodo è quello breve e non l'intestazione del Markdown: nel CSV si ripete
         # su ogni riga, e il titolo dello scenario più lungo è di 84 caratteri.
         (dati / f"rendiconto-{scenario.nome}.csv").write_text(
@@ -215,7 +289,7 @@ def main() -> None:
         risultati.append((scenario, totale, esito))
         rendiconti[scenario.nome] = testo
 
-    # Un solo rendiconto a video, e i tre file su disco: vedi il docstring del modulo.
+    # Un solo rendiconto a video, e i quattro file su disco: vedi il docstring del modulo.
     # Un nome solo per lo scenario da stampare per esteso: cablarlo in due punti
     # significa che prima o poi la frase di chiusura annuncia uno scenario e la demo ne
     # stampa un altro, e che togliere quello scenario da SCENARI da' un KeyError.

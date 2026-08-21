@@ -1,11 +1,12 @@
-"""Scenari mock e coerenza del rendiconto (roadmap 5, 11 e 12).
+"""Scenari mock e coerenza del rendiconto (roadmap 5, 11, 12 e 16).
 
 Due gruppi di casi:
 
-- gli SCENARI mock: formato dei file, determinismo, e il fatto che i tre scenari coprano
-  i tre regimi del vincolo eccedentario — sotto soglia, appena sopra, molto sopra — così
-  che la demo eserciti anche il ramo eccedentario del motore invece di lasciarlo a zero
-  per sempre, e lo eserciti anche dove sbagliarlo costa di più;
+- gli SCENARI mock: formato dei file, determinismo, e il fatto che i quattro scenari
+  coprano i regimi del vincolo eccedentario — sotto soglia, appena sopra la soglia del
+  cumulo, appena sopra quella della sola tariffa, molto sopra — così che la demo eserciti
+  anche il ramo eccedentario del motore invece di lasciarlo a zero per sempre, e lo
+  eserciti anche dove sbagliarlo costa di più;
 - gli ARROTONDAMENTI del rendiconto: l'intestazione e la tabella devono chiudere sullo
   stesso numero anche quando i due modi di portare gli euro in centesimi divergono.
 
@@ -24,7 +25,7 @@ import pytest
 from cer_motore import mock, regole
 from cer_motore.__main__ import REGOLE as REGOLE_DEMO
 from cer_motore.__main__ import STATUTO_TOML, elabora
-from cer_motore.condivisione import energia_condivisa
+from cer_motore.condivisione import alloca_oraria, energia_condivisa, partiziona_esente_fattore_f
 from cer_motore.rendiconto import INTESTAZIONE_CSV, rendiconto_csv, rendiconto_markdown
 from cer_motore.ripartizione import (
     FONDO_ECCEDENTARIO,
@@ -33,7 +34,11 @@ from cer_motore.ripartizione import (
     ripartisci,
     scomponi_eccedentario_insiemi,
 )
-from cer_motore.tariffe import SOGLIA_ECCEDENTARIO_SOLA_TARIFFA
+from cer_motore.tariffe import (
+    SOGLIA_ECCEDENTARIO_CUMULO_CONTO_CAPITALE,
+    SOGLIA_ECCEDENTARIO_SOLA_TARIFFA,
+    incentivo_periodo,
+)
 
 ORE_GIUGNO = 720  # 30 giorni * 24 ore, il mese generato per default
 
@@ -63,6 +68,7 @@ def test_il_formato_dei_file_non_dipende_dallo_scenario(tmp_path):
 
         # Righe attese: intestazione + un'ora per ogni POD, di produzione o di prelievo.
         #   equilibrata: 1 + 720 * (2 impianti + 8 utenze) = 7201
+        #   cumulo:      1 + 720 * (1 impianto  + 5 utenze) = 4321
         #   paese:       1 + 720 * (2 impianti + 8 utenze) = 7201
         #   concentrata: 1 + 720 * (1 impianto  + 5 utenze) = 4321
         n_pod = len(scenario.impianti) + len(scenario.utenze)
@@ -157,6 +163,190 @@ def test_lo_scenario_paese_resta_nella_fascia_critica_in_ogni_mese(tmp_path):
     # E giugno, il mese della demo, è il massimo: i valori inchiodati dal caso a mano
     # qui sotto sono quindi anche il caso peggiore dei dodici.
     assert rapporti[6] == max(rapporti.values())
+
+
+# Fascia del cumulo con contributo in conto capitale: fra la SUA soglia (45%) e quella
+# della sola tariffa premio (55%). Un rapporto qui dentro fa scattare il vincolo per
+# `cumulo` (soglia 45%) mentre non lo farebbe scattare per uno scenario a sola tariffa
+# allo stesso rapporto (soglia 55%): è il punto per cui questo scenario esiste, non solo
+# "sopra il 45%" — sopra il 45% e sotto il 55% è ciò che rende visibile che le due soglie
+# sono davvero due soglie diverse e non una ripetizione.
+FASCIA_CUMULO = (SOGLIA_ECCEDENTARIO_CUMULO_CONTO_CAPITALE, SOGLIA_ECCEDENTARIO_SOLA_TARIFFA)
+
+
+def test_lo_scenario_cumulo_resta_fra_le_due_soglie_in_ogni_mese(tmp_path):
+    # LA PROPRIETÀ CHE CONTA È STRUTTURALE, NON FORTUNATA (stesso principio di roadmap
+    # 11 per `paese`): il rapporto è verificato su tutti e dodici i mesi del 2026, non
+    # solo su giugno col seed 42.
+    #
+    # Misurato: min 0,4792 (agosto), max 0,4916 (luglio), un'escursione di poco più di un
+    # punto percentuale contro quasi tre punti di margine verso la soglia bassa (45%) e
+    # quasi sei verso quella alta (55%). Il margine è più stretto di quello di `paese`
+    # verso la sua fascia (cinque punti da entrambi i lati), ma la struttura fisica che
+    # lo produce è la stessa: 47 kW dimensionati per coprire i consumi diurni della
+    # palestra comunale senza sovradimensionare, non un numero scelto per centrare la
+    # fascia con un decimale.
+    rapporti = {}
+    for mese in MESI_2026:
+        f_mis, f_pz = mock.genera(tmp_path / f"m{mese:02d}", mese=mese, scenario=mock.CUMULO)
+        immissioni, prelievi, _prezzi = mock.carica(f_mis, f_pz)
+        ec = sum(energia_condivisa(immissioni, prelievi), D(0))
+        immesse = sum((sum(s, D(0)) for s in immissioni.values()), D(0))
+        rapporti[mese] = ec / immesse
+
+    basso, alto = FASCIA_CUMULO
+    fuori = {m: round(r, 4) for m, r in rapporti.items() if not basso < r < alto}
+    assert not fuori, f"rapporto EC/EI fuori dalla fascia del cumulo nei mesi: {fuori}"
+    assert round(min(rapporti.values()), 4) == D("0.4792")   # agosto
+    assert round(max(rapporti.values()), 4) == D("0.4916")   # luglio
+    # Giugno, il mese della demo, è dentro l'intervallo misurato ma non ne è l'estremo:
+    # a differenza di `paese`, qui il caso a mano sotto non è anche il caso peggiore dei
+    # dodici — è comunque rappresentativo, perché tutti e dodici stanno nella fascia.
+    assert basso < rapporti[6] < alto
+
+
+def test_lo_scenario_cumulo_ha_un_prosumer_in_cumulo_con_prelievo_esente():
+    # Combinazione che nessuno degli altri tre scenari esercita: lo stesso membro possiede
+    # l'impianto IN CUMULO (fattore F > 0) ed è anche il titolare di un punto di prelievo
+    # ESENTE dal fattore F (ente territoriale, Regole Operative pag. 41) — la sua stessa
+    # energia condivisa, quando la consuma lui, non viene decurtata; quando la consumano
+    # lo studio o il bar, sì.
+    membri = mock.CUMULO.membri()
+    assert membri["M01-comune"] == {"ruolo": "prosumer", "impresa": False}
+    assert mock.CUMULO.fattori_conto_capitale() == {"IT001E0000401S": D("0.30")}
+    assert mock.CUMULO.pod_esenti_fattore_f == frozenset(
+        {"IT001E0000402T", "IT001E0000403U", "IT001E0000404V"}
+    )
+    # I tre PUNTI DI PRELIEVO esenti appartengono ai membri non-impresa (il comune e le
+    # due famiglie); i due non esenti alle due imprese. Non è un caso: le cinque
+    # categorie esenti dal fattore F sono un sottoinsieme forte dei "consumatori diversi
+    # dalle imprese" del §4 — vedi il commento sopra `imprese=` nello scenario.
+    idonei = [m for m, d in membri.items()
+              if d["ruolo"] in ("consumatore", "prosumer") and not d["impresa"]]
+    assert sorted(idonei) == ["M01-comune", "M02", "M03"]
+
+
+def test_elabora_rifiuta_uno_scenario_con_impianti_in_due_insiemi(tmp_path):
+    # `elabora` assume un insieme incentivato SOLO per scenario (nessuno dei quattro
+    # mock lo mescola): la colonna "Soglia" del confronto e l'intestazione del
+    # rendiconto vogliono un valore, non due. Uno scenario con un impianto a sola
+    # tariffa E uno in cumulo — nessuno dei quattro scenari mock, ma un dict di regole
+    # o un adapter futuro potrebbero costruirne uno — deve fermarsi al confine invece
+    # di scegliere una soglia a caso o stampare un rendiconto silenziosamente sbagliato
+    # (roadmap 12: "tutte le guardie sono ora verificate sul messaggio e non sul solo
+    # tipo di eccezione").
+    misto = replace(
+        mock.CUMULO,
+        nome="misto-per-test",
+        impianti=mock.CUMULO.impianti + (
+            mock.Impianto("IT001E0000901Z", "M09-extra", D("10")),  # F = 0: sola tariffa
+        ),
+    )
+    with pytest.raises(NotImplementedError, match=r"2 insiemi incentivati"):
+        elabora(misto, tmp_path)
+
+
+def test_end_to_end_lo_scenario_cumulo_fa_scattare_leccedentario_alla_soglia_del_cumulo(tmp_path):
+    # IL CASO A MANO CHE CHIUDE LA VOCE 6/8 DELLA ROADMAP: fino al 20 agosto 2026
+    # `condivisione.partiziona_esente_fattore_f` e la soglia 45% di
+    # `InsiemeIncentivato.cumulo_conto_capitale` erano scritte e testate a sé, ma nessun
+    # percorso reale (`__main__.elabora`) le attraversava — la stessa specie di difetto
+    # che le voci 6 e 8 avevano già trovato due volte, con cinque bug da denaro nati
+    # esattamente da funzioni non cablate. Qui lo sono.
+    #
+    # Numeri del periodo (giugno 2026, seed 42), misurati eseguendo `elabora`:
+    #   E_immessa = 7008,793 kWh      E_ACI (condivisa) = 3421,225 kWh
+    #   rapporto  = 3421,225 / 7008,793 = 0,4881332634592004643310196206
+    #   soglia    = 0,45 (CUMULO CONTO CAPITALE, non 0,55: l'unico impianto ha F=0,30>0)
+    #   scarto    = 0,4881332634592… − 0,45 = 0,0381332634592004643310196206
+    totale, esito = elabora(mock.CUMULO, tmp_path)
+    assert (totale["ec_tot_kwh"], totale["immissioni_tot_kwh"]) == (D("3421.225"), D("7008.793"))
+    assert totale["soglia_eccedentario"] == SOGLIA_ECCEDENTARIO_CUMULO_CONTO_CAPITALE
+
+    #   C_ACI (TIP del periodo) = 387,165865975630 € → 38717 centesimi (ROUND_HALF_UP)
+    #   C_ACI,ecc = 38717 * 0,0381332634592004643310196206… = 1476,405… → 1476 cent = 14,76 €
+    #   base TIP  = 38717 − 1476 = 37241 centesimi
+    assert totale["tip_cent"] == 38717
+    assert totale["eccedentario_cent"] == 1476
+
+    # LA PROVA CHE LA SOGLIA VIVA È QUELLA DEL CUMULO, NON UNA COINCIDENZA DI TABELLA:
+    # con QUESTI STESSI numeri (stesso EC, stessa immissione, stesso TIP) ma nella soglia
+    # della sola tariffa premio (55%), il rapporto 0,488 sta SOTTO soglia e l'eccedentario
+    # sarebbe zero. La stessa energia, allo stesso impianto, con la sola differenza
+    # dell'insieme a cui appartiene, scatta o non scatta.
+    atteso_cumulo = scomponi_eccedentario_insiemi([
+        InsiemeIncentivato.cumulo_conto_capitale(
+            totale["ec_tot_kwh"], totale["immissioni_tot_kwh"], totale["tip_cent"]
+        )
+    ])
+    atteso_sola = scomponi_eccedentario_insiemi([
+        InsiemeIncentivato.sola_tariffa(
+            totale["ec_tot_kwh"], totale["immissioni_tot_kwh"], totale["tip_cent"]
+        )
+    ])
+    assert atteso_cumulo == (37241, 1476) == (totale["tip_cent"] - 1476, totale["eccedentario_cent"])
+    assert atteso_sola == (38717, 0)  # la soglia del 55% non scatterebbe affatto qui
+
+    # IL TIP SI SCOMPONE IN ESENTE (F=0) E NON ESENTE (F=0,30), TARIFFATI SEPARATAMENTE
+    # (docs/FORMULE.md §2-bis). Misurato tariffando le due serie partizionate da
+    # `partiziona_esente_fattore_f` sull'energia condivisa dell'unico impianto:
+    #   T_esente     (F=0)    = 254,87241381210 €  su 1966,142362 kWh esenti
+    #   T_non_esente (F=0,30) = 132,293452163530 €  su 1455,082638 kWh non esenti
+    #   T_esente + T_non_esente = 387,165865975630 € = C_ACI di cui sopra
+    # L'IDENTITÀ CHE VALE ESATTA (non solo a meno dell'arrotondamento, perché la tariffa
+    # oraria è la stessa funzione lineare su entrambe le parti prima di F): il denaro che
+    # l'esenzione preserva è esattamente T_esente × F, perché applicare F a TUTTA
+    # l'energia darebbe (T_esente + T_non_esente,F=0) × (1−F), e la differenza fra questo
+    # e T_esente + T_non_esente,F=0×(1−F) è T_esente − T_esente×(1−F) = T_esente × F:
+    #   T_esente × 0,30 = 254,87241381210 × 0,30 = 76,4617241436300 €
+    # Verificato anche applicando F all'intera energia condivisa dell'impianto (nessuna
+    # esenzione, il caso che la norma esclude): 310,7041418320 €, cioè 387,165865975630
+    # − 310,7041418320 = 76,461724143630 €, la STESSA cifra di T_esente × F, non solo in
+    # apparenza — sono uguali come Decimal, non arrotondati indipendentemente allo stesso
+    # valore.
+    # `elabora` ha già scritto misure.csv e prezzi_zonali.csv dentro tmp_path (li scrive
+    # `mock.genera`, chiamato al suo interno): li si rilegge invece di rigenerarli, che
+    # con lo stesso seed darebbe comunque gli stessi byte (determinismo verificato
+    # altrove) ma sarebbe lavoro superfluo.
+    immissioni, prelievi, prezzi = mock.carica(tmp_path / "misure.csv", tmp_path / "prezzi_zonali.csv")
+    ec = energia_condivisa(immissioni, prelievi)
+    ec_pod = alloca_oraria(immissioni, ec)["IT001E0000401S"]
+    esente, non_esente = partiziona_esente_fattore_f(
+        prelievi, ec_pod, mock.CUMULO.pod_esenti_fattore_f
+    )
+    a = incentivo_periodo(esente, prezzi, D("47"), zona="nord",
+                          fotovoltaico=True, fattore_conto_capitale=D(0))
+    b = incentivo_periodo(non_esente, prezzi, D("47"), zona="nord",
+                          fotovoltaico=True, fattore_conto_capitale=D("0.30"))
+    assert (sum(esente, D(0)), sum(non_esente, D(0))) == (D("1966.142362"), D("1455.082638"))
+    assert a["tip"] == D("254.87241381210")
+    assert b["tip"] == D("132.293452163530")
+    assert a["tip"] + b["tip"] == totale["tip"] == D("387.165865975630")
+    risparmio_esenzione = a["tip"] * D("0.30")
+    assert risparmio_esenzione == D("76.4617241436300")
+    tutto_decurtato = incentivo_periodo(ec_pod, prezzi, D("47"), zona="nord",
+                                        fotovoltaico=True, fattore_conto_capitale=D("0.30"))
+    assert totale["tip"] - tutto_decurtato["tip"] == risparmio_esenzione  # identità esatta
+    # A CENTESIMO, invece, i due modi DIVERGONO di un centesimo — lo stesso fenomeno già
+    # documentato nel rendiconto (roadmap 15) per TIP e ARERA, qui fra "l'esenzione vale
+    # T_e×F" e "la differenza dei due totali arrotondati indipendentemente":
+    #   in_centesimi(76,4617241436300) = 7646
+    #   in_centesimi(387,165865975630) − in_centesimi(310,7041418320) = 38717 − 31070 = 7647
+    assert in_centesimi(risparmio_esenzione) == 7646
+    assert in_centesimi(totale["tip"]) - in_centesimi(tutto_decurtato["tip"]) == 7647
+
+    # L'ECCEDENTARIO VA AI SOLI CONSUMATORI DIVERSI DALLE IMPRESE, E PER INTERO: il
+    # comune (prosumer non-impresa) e le due famiglie, pro-quota del loro prelievo
+    # coincidente con l'energia condivisa. Studio e bar (imprese) non ne prendono nulla.
+    quote_ecc = {m: v["quota_eccedentaria"] for m, v in esito.items()
+                 if m != "_fondi" and v.get("quota_eccedentaria")}
+    assert quote_ecc == {"M01-comune": 1222, "M02": 127, "M03": 127}
+    assert sum(quote_ecc.values()) == 1476
+
+    # Invariante sacro: tutto ciò che si distribuisce è esattamente TIP + ARERA in
+    # centesimi, 38717 + 2812 = 41529, fondi statutari inclusi.
+    assert totale["arera_cent"] == 2812
+    assert sum(v for voci in esito.values() for v in voci.values()) == 41529
 
 
 def test_lo_scenario_paese_ha_un_prosumer_che_non_e_unimpresa():
@@ -322,11 +512,19 @@ def test_la_demo_produce_tutti_i_rendiconti(tmp_path, monkeypatch, capsys):
     scritti = {n: (dati / f"rendiconto-{n}.md").read_text(encoding="utf-8")
                for n in mock.SCENARI}
     assert "vincolo eccedentario **non attivo**" in scritti["equilibrata"]
+    assert "vincolo eccedentario **attivo**" in scritti["cumulo"]
     assert "vincolo eccedentario **attivo**" in scritti["paese"]
     assert "vincolo eccedentario **attivo**" in scritti["concentrata"]
     assert "200.23 €" in scritti["concentrata"]  # la quota eccedentaria della palestra
     assert "45.10 €" in scritti["paese"]         # quella del comune, nella fascia critica
-    # E i TRE export CSV accanto ai tre Markdown (roadmap 14): la demo è l'unico
+    assert "12.22 €" in scritti["cumulo"]        # quella del comune, insieme a soglia 45%
+    # `cumulo` è l'unico dei quattro rendiconti che dichiara la soglia del 45%, non del
+    # 55%: è la stampa dell'attraversamento reale di `partiziona_esente_fattore_f` e
+    # dell'insieme "cumulo_conto_capitale" (voce 6/8 della roadmap).
+    assert "contro una soglia del **45.0%**" in scritti["cumulo"]
+    for n in ("equilibrata", "paese", "concentrata"):
+        assert "contro una soglia del **55.0%**" in scritti[n]
+    # E i QUATTRO export CSV accanto ai quattro Markdown (roadmap 14): la demo è l'unico
     # percorso reale che li attraversa, e una funzione che nessun flusso percorre è una
     # funzione di cui non si sa se è cablata bene.
     esportati = {n: (dati / f"rendiconto-{n}.csv").read_text(encoding="utf-8")
@@ -339,13 +537,15 @@ def test_la_demo_produce_tutti_i_rendiconti(tmp_path, monkeypatch, capsys):
     assert ";M03-palestra;membro;consumatore;no;0.00;30.50;200.23;" in esportati["concentrata"]
     # Tutto l'output della demo sta sotto ./data/, che è già ignorata da git: lanciarla
     # non deve lasciare file generati in mezzo ai sorgenti.
+    assert (dati / "cumulo" / "misure.csv").exists()
     assert (dati / "concentrata" / "misure.csv").exists()
     assert (dati / "paese" / "misure.csv").exists()
     assert list(tmp_path.iterdir()) == [dati]
 
-    # A video: la tabella con tutti e tre i regimi, e solo il rendiconto di concentrata.
+    # A video: la tabella con tutti e quattro i regimi, e solo il rendiconto di concentrata.
     stampato = capsys.readouterr().out
     assert "non scatta" in stampato
+    assert "scatta: 14.76 €, il 3.8% del TIP" in stampato
     assert "scatta: 59.09 €, il 5.6% del TIP" in stampato
     assert "scatta: 241.72 €, il 42.6% del TIP" in stampato
     assert stampato.count("| Membro | Ruolo |") == 1
@@ -355,9 +555,9 @@ def test_la_demo_produce_tutti_i_rendiconti(tmp_path, monkeypatch, capsys):
     # 84 caratteri e da solo portava la riga a 200, cioè a capo su qualunque terminale.
     # I titoli sono ora in un elenco sotto, dove avvolgersi non fa danno.
     righe_tabella = [r for r in stampato.splitlines() if r.startswith("| `")]
-    assert len(righe_tabella) == 3
+    assert len(righe_tabella) == 4
     assert max(len(r) for r in righe_tabella) <= 100
-    for nome in ("equilibrata", "paese", "concentrata"):
+    for nome in ("equilibrata", "cumulo", "paese", "concentrata"):
         assert f"- `{nome}` — " in stampato
 
 
@@ -574,12 +774,13 @@ def _somma_colonna(righe: list[dict[str, str]], colonna: str) -> int:
     return sum(int((D(r[colonna]) * 100).quantize(D(1), ROUND_HALF_UP)) for r in righe)
 
 
-def test_il_rendiconto_csv_chiude_sui_totali_dei_tre_scenari(tmp_path):
+def test_il_rendiconto_csv_chiude_sui_totali_dei_quattro_scenari(tmp_path):
     # L'INVARIANTE SACRO, verificato sull'export invece che sull'esito: la somma della
-    # colonna `totale_eur` è TIP + ARERA del periodo, fondi statutari compresi. I tre
+    # colonna `totale_eur` è TIP + ARERA del periodo, fondi statutari compresi. I quattro
     # totali sono quelli già risolti a mano nei casi end-to-end qui sopra:
     #
     #   equilibrata:  TIP 41827 + ARERA 2649 = 44476 cent = 444,76 €, eccedentario 0
+    #   cumulo:       TIP 38717 + ARERA 2812 = 41529 cent, di cui 1476 eccedentari
     #   paese:        TIP 105018 + ARERA 6647 = 111665 cent, di cui 5909 eccedentari
     #   concentrata:  TIP 56716 + ARERA 3590 = 60306 cent, di cui 24172 eccedentari
     #
@@ -588,6 +789,7 @@ def test_il_rendiconto_csv_chiude_sui_totali_dei_tre_scenari(tmp_path):
     # (Regole Operative pag. 41), e su cui si controlla che sia arrivato dove doveva.
     attesi = {
         "equilibrata": (41827, 2649, 0),
+        "cumulo": (38717, 2812, 1476),
         "paese": (105018, 6647, 5909),
         "concentrata": (56716, 3590, 24172),
     }

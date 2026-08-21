@@ -37,22 +37,31 @@ cd cer-motore
 python3 -m venv .venv                                  # su Windows: python -m venv .venv
 ./.venv/bin/python -m pip install -e ".[dev]"          # Windows: .\.venv\Scripts\python.exe
 ./.venv/bin/python -m pytest -q                        # i casi risolti a mano
-./.venv/bin/python -m cer_motore                       # demo end-to-end su tre CER mock
+./.venv/bin/python -m cer_motore                       # demo end-to-end su quattro CER mock
 ```
 
 La demo genera un mese di misure orarie, calcola energia condivisa, TIP con cap e correttivo
 geografico, valorizzazione ARERA, applica regole statutarie dichiarative (fondi, quote
 produttori/consumatori) e scrive un rendiconto per membro, in Markdown e in CSV.
 
-Gli scenari mock sono **tre, con lo stesso statuto**: cambia solo la configurazione fisica, e
-con essa il rapporto fra energia condivisa ed energia immessa, che è ciò che decide se scatta
-il vincolo dell'importo eccedentario (soglia 55%, `docs/FORMULE.md` §4).
+Gli scenari mock sono **quattro, con lo stesso statuto**: cambia solo la configurazione fisica,
+e con essa il rapporto fra energia condivisa ed energia immessa, che è ciò che decide se scatta
+il vincolo dell'importo eccedentario — soglia 55% per la sola tariffa premio, **45% per gli
+impianti che la cumulano con un contributo in conto capitale** (`docs/FORMULE.md` §4).
 
 | Scenario | Configurazione | EC/EI | Vincolo eccedentario |
 |---|---|---:|---|
 | `equilibrata` | CER di quartiere: 2 impianti FV (60 e 20 kW), 8 utenze fra case, uffici e un bar | 27,2% | non scatta |
+| `cumulo` | CER mista: un FV comunale da 47 kW in cumulo con un contributo in conto capitale (F=0,30), 5 utenze fra esenti e non dal fattore F | 48,8% | scatta (soglia 45%, non 55%): 14,76 € dei 387,17 €, il 3,8% |
 | `paese` | CER di paese: FV da 50 kW sul supermercato e 40 kW sulla palestra comunale, 8 utenze fra negozi, uffici e case | 60,6% | scatta appena: 59,09 € dei 1.050,18 € di tariffa premio, il 5,6% |
 | `concentrata` | CER artigianale: un FV da 30 kW, un'officina, un supermercato, una palestra comunale e 2 famiglie | 97,6% | scatta in pieno: 241,72 € dei 567,16 €, il 42,6% |
+
+`cumulo` è la dimostrazione che le due soglie sono davvero due soglie: al 48,8% il vincolo
+scatta perché l'unico impianto ha preso un contributo in conto capitale (soglia 45%) — con la
+sola tariffa premio, allo stesso rapporto, non scatterebbe (soglia 55%). L'energia condivisa
+del comune (che possiede l'impianto ED è utente della palestra) e delle due famiglie è **esente
+dal fattore F** (Regole Operative pag. 41: enti territoriali, enti religiosi, enti del terzo
+settore, protezione ambientale, persone fisiche); quella di studio e bar no.
 
 L'ultimo non è un caso di scuola: con un impianto piccolo davanti a grandi consumatori diurni
 il prelievo eccede quasi sempre l'immissione, quindi si condivide quasi tutto ciò che si immette
@@ -60,16 +69,16 @@ il prelievo eccede quasi sempre l'immissione, quindi si condivide quasi tutto ci
 ai **soli consumatori diversi dalle imprese**: nel rendiconto la colonna corrispondente si
 popola per la palestra comunale e le due famiglie, non per l'officina né per il supermercato.
 
-`paese` sta invece **appena sopra la soglia**, ed è la configurazione più ordinaria delle tre:
+`paese` sta invece **appena sopra la soglia**, ed è la configurazione più ordinaria dei quattro:
 90 kW che coprono i consumi diurni di un supermercato, di una palestra comunale e di qualche
 utenza minore. È la fascia in cui l'errore corretto il 7 agosto 2026 sbagliava di più — lì
 avrebbe assegnato 97,46 € invece di 59,09 €, +65% — e in cui uno sbaglio del genere passa
 inosservato, perché l'importo è piccolo e nessun numero appare assurdo. Il rapporto resta fra
 0,596 e 0,606 su tutti e dodici i mesi del 2026, non solo su quello della demo.
 
-A video la demo stampa il confronto fra i tre e **un solo rendiconto per esteso**, quello di
-`concentrata`: tre rendiconti sarebbero un muro di testo. Tutto ciò che scrive sta sotto
-`data/`: i CSV di misura in `data/<scenario>/`, i rendiconti completi di tutti e tre in
+A video la demo stampa il confronto fra i quattro e **un solo rendiconto per esteso**, quello di
+`concentrata`: quattro rendiconti sarebbero un muro di testo. Tutto ciò che scrive sta sotto
+`data/`: i CSV di misura in `data/<scenario>/`, i rendiconti completi di tutti e quattro in
 `data/rendiconto-<scenario>.md`. Una sola cartella usa-e-getta, da cancellare quando si vuole.
 
 Di ogni rendiconto la demo scrive anche la versione **in CSV**,

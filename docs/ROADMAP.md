@@ -5,7 +5,7 @@ utile in meno di 15 minuti.
 
 ## Cosa resta aperto
 
-Quattordici voci su quindici sono chiuse. Resta la sola che non dipende da noi:
+Quindici voci su sedici sono chiuse. Resta la sola che non dipende da noi:
 
 - **9 — adapter per l'export GSE reale**. Finché nessuna CER passa un export vero
   dall'area clienti, il formato di `mock.py` resta un'assunzione documentata e il motore
@@ -51,9 +51,10 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
 4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
-   **184 oggi**, di cui una buona metà sono casi a mano veri (calcolo passo per passo nel
-   commento) e il resto guardie di contratto. Coperti prosumer, impianti misti FV/non-FV, giorni da 23/25 ore,
-   periodo interamente senza immissioni, arrotondamenti cattivi al centesimo, bordi del cap.
+   **188 oggi** (21 agosto 2026), di cui una buona metà sono casi a mano veri (calcolo passo
+   per passo nel commento) e il resto guardie di contratto. Coperti prosumer, impianti misti
+   FV/non-FV, giorni da 23/25 ore, periodo interamente senza immissioni, arrotondamenti
+   cattivi al centesimo, bordi del cap, cumulo con contributo in conto capitale (voce 16).
 
 5. ~~**Un secondo scenario mock sopra soglia**~~ — *fatto 7 agosto 2026*. `mock.py` non
    genera più una sola CER: espone uno `Scenario` (impianti, utenze, anagrafica, zone) e
@@ -71,9 +72,16 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    eccedentari si sommano. La soglia è un campo obbligatorio senza default, e i costruttori
    `sola_tariffa` / `cumulo_conto_capitale` la pescano dalle costanti di `tariffe.py`. Un
    test misura quanto si sbaglierebbe aggregando tutto in un insieme solo: −37%
-   sull'importo destinato ai non-imprese. La demo ci passa davvero, con un insieme solo
-   (nessuno scenario mock ha impianti in cumulo), perché una funzione che nessun percorso
-   reale attraversa è una funzione di cui non si sa se è cablata bene.
+   sull'importo destinato ai non-imprese. Alla chiusura di questa voce la demo ci passava
+   con un insieme solo, perché nessuno scenario mock aveva impianti in cumulo con
+   contributo in conto capitale: l'insieme a soglia 45% restava scritto ma mai popolato
+   da un percorso reale. **Chiuso il 21 agosto 2026, voce 16**: lo scenario mock `cumulo`
+   fa sì che l'insieme passato a `scomponi_eccedentario_insiemi` sia, per la prima volta,
+   quello `cumulo_conto_capitale` invece di `sola_tariffa` — resta UNO alla volta, non
+   due insieme: `elabora` rifiuta esplicitamente uno scenario che ne popolasse due
+   contemporaneamente, perché la colonna "Soglia" del confronto non saprebbe quale
+   mostrare. L'aggregazione di due insiemi SIMULTANEI resta quindi testata solo in
+   isolamento, non dalla demo: non è quello che questa voce chiudeva.
 7. ~~**Regole dichiarative da file**~~ — *fatto 7-8 agosto 2026*. `regole.py` legge lo
    statuto da TOML con `tomllib` (stdlib da 3.11, nessuna dipendenza nuova), separando
    l'adapter che tocca il disco (`leggi`) dalle funzioni pure che validano (`valida`,
@@ -96,6 +104,13 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    lista, che faceva restituire `(0, 0)` a `scomponi_eccedentario_insiemi` annullando
    l'intero contributo TIP, con l'assert finale complice. Tutto chiuso e inchiodato da test
    di regressione; le guardie ora sono in una funzione sola, condivisa dalle due strade.
+
+   Il difetto comune a questa voce e alla 6 — una funzione scritta e testata a sé, ma
+   scoperta perché nessun percorso reale la chiamava — si è ripresentato una terza volta
+   con `condivisione.partiziona_esente_fattore_f` (voce 13) fino al 20 agosto 2026: la
+   partizione esisteva, era testata, ma `__main__.elabora` non la chiamava mai, esattamente
+   come `scomponi_eccedentario_insiemi` prima di questa voce. **Chiuso il 21 agosto 2026,
+   voce 16.**
 9. **Adapter export GSE reale**: quando una CER fornirà un export dall'area clienti,
    scrivere il parser e declassare il mock a fixture di test. Dipende da un contatto CER.
 
@@ -243,3 +258,51 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
     proprio contributo già in centesimi interi. Con due insiemi da 1,005 € la ripartizione
     ne distribuiva 202 e il rendiconto ne pretendeva 201, su dati legittimi. Ora le chiavi
     `tip_cent` e `arera_cent` sono autorevoli: se ci sono, il rendiconto le usa.
+16. ~~**Quarto scenario mock `cumulo`: la partizione del fattore F cablata davvero**~~ —
+    *fatto 21 agosto 2026*. Chiude un rilievo di revisione permanente: fino a questa
+    voce `condivisione.partiziona_esente_fattore_f` e la soglia 45% di
+    `InsiemeIncentivato.cumulo_conto_capitale` (voce 13) erano scritte e testate a sé, ma
+    nessun percorso reale le chiamava — la STESSA specie di difetto già trovato due volte
+    alle voci 6 e 8, dove cinque bug da denaro erano nati esattamente da funzioni scritte
+    ma non cablate. `mock.CUMULO`: un impianto FV comunale da 47 kW con un contributo in
+    conto capitale (F = 0,30, `Impianto.fattore_conto_capitale`, nuovo campo con default
+    0 — i tre scenari precedenti non se ne accorgono) e cinque utenze, tre esenti dal
+    fattore F (il comune stesso, ente territoriale, e due famiglie — `Scenario.
+    pod_esenti_fattore_f`, nuovo campo) e due no (studio e bar, imprese).
+
+    `__main__.elabora` ora smista ogni impianto in uno di DUE secchi possibili — sola
+    tariffa o cumulo conto capitale — secondo il proprio fattore F: un impianto in
+    cumulo passa prima da `partiziona_esente_fattore_f`, poi da `tariffe.
+    incentivo_periodo` DUE volte (F = 0 sulla parte esente, F sull'altra), e il secchio
+    non vuoto diventa l'`InsiemeIncentivato` che `scomponi_eccedentario_insiemi` scompone
+    — per la prima volta quello `cumulo_conto_capitale`, non `sola_tariffa`. Resta UN
+    insieme alla volta: `elabora` rifiuta esplicitamente uno scenario che li popolasse
+    entrambi, perché la colonna "Soglia" del confronto e l'intestazione del rendiconto
+    assumono un valore solo. L'aggregazione di due insiemi SIMULTANEI (quella che la
+    voce 6 aveva introdotto) resta quindi verificata solo dai test, non da un percorso
+    reale — non è quello che questa voce chiude. Misurato sul caso a mano (giugno 2026,
+    seed 42): rapporto EC/EI 0,4881,
+    **sopra la soglia del cumulo (45%) ma sotto quella della sola tariffa premio (55%)**
+    — con questi stessi numeri e la sola tariffa premio il vincolo NON scatterebbe
+    affatto: è la dimostrazione che le due soglie sono indipendenti, non un secondo
+    numero ridondante. Il vincolo eccedentario scatta e prende 14,76 € del TIP (3,8%);
+    l'identità esatta fra "l'esenzione preserva T_esente × F" e "applicare F a tutta
+    l'energia costerebbe il 19,75% del contributo in più" è verificata in
+    `tests/test_scenari.py` a livello di `Decimal`, non solo di centesimi arrotondati.
+
+    I TRE scenari precedenti (`equilibrata`, `paese`, `concentrata`) restano identici
+    byte per byte, verificato per confronto diretto con `HEAD` prima di questa voce:
+    `elabora` per un impianto a F = 0 somma esattamente gli stessi termini nello stesso
+    ordine di prima, in un secchio invece che nell'accumulatore unico di allora.
+
+    La guardia sull'insieme unico (sopra) ha il proprio test: uno scenario con un
+    impianto a sola tariffa E uno in cumulo, costruito per il solo test, alza
+    `NotImplementedError` con il messaggio verificato, non un tipo di eccezione soltanto
+    — la stessa disciplina della voce 12 ("tutte le guardie sono ora verificate sul
+    messaggio e non sul solo tipo di eccezione").
+
+    **Resta aperto quello che voce 13 aveva già dichiarato aperto**: il criterio di
+    attribuzione dell'energia esente e la fonte della classificazione dei POD restano
+    nostri e non prescritti — `Scenario.pod_esenti_fattore_f` è anagrafica del mock, non
+    una risposta alla domanda. Cablare la partizione in un percorso reale non la risolve,
+    la rende visibile.

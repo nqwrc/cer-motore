@@ -44,8 +44,8 @@ Con il venv attivo (`.\.venv\Scripts\Activate.ps1` oppure `source .venv/bin/acti
 due comandi che userai sempre sono:
 
 ```bash
-python -m pytest -q      # la suite completa: 184 test, circa tre secondi
-python -m cer_motore     # la demo end-to-end sui tre scenari mock
+python -m pytest -q      # la suite completa: 188 test, circa tre secondi
+python -m cer_motore     # la demo end-to-end sui quattro scenari mock
 ```
 
 Se preferisci non attivare il venv, funzionano identici invocando l'interprete per esteso:

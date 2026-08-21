@@ -34,19 +34,31 @@ nuvolosità pseudo-casuale; i consumi sono profili orari di forma perturbati con
 
 Il **formato dei file non dipende dallo scenario**: cambia solo quanti POD ci sono e come
 consumano. Uno `Scenario` è la descrizione della configurazione (impianti, utenze, anagrafica
-dei membri, zone) e i tre previsti sono:
+dei membri, zone, e — solo per `cumulo` — fattore F e POD esenti) e i quattro previsti sono:
 
 | `nome` | Configurazione | EC/EI |
 |---|---|---:|
 | `equilibrata` | 2 impianti FV (60 e 20 kW), 8 utenze: 5 residenziali, 2 uffici, 1 bar | 0,27 |
+| `cumulo` | 1 impianto FV comunale da 47 kW in cumulo con contributo in conto capitale (F=0,30), 5 utenze: palestra comunale, 2 residenziali (esenti dal fattore F), ufficio, bar (non esenti) | 0,49 |
 | `paese` | 2 impianti FV (50 kW sul supermercato, 40 kW sulla palestra comunale), 8 utenze: supermercato, palestra, bar, 2 uffici, 3 residenziali | 0,61 |
 | `concentrata` | 1 impianto FV da 30 kW, 5 utenze: officina, supermercato, palestra comunale, 2 residenziali | 0,98 |
 
-Servono tutti e tre perché il rapporto energia condivisa / energia immessa decide se scatta il
-vincolo dell'importo eccedentario (`FORMULE.md` §4): con il solo scenario `equilibrata` quel
+Servono tutti e quattro perché il rapporto energia condivisa / energia immessa decide se scatta
+il vincolo dell'importo eccedentario (`FORMULE.md` §4): con il solo scenario `equilibrata` quel
 ramo del motore non veniva mai percorso dalla demo. Nella `concentrata` l'impianto è
 sottodimensionato rispetto ai prelievi (4.474 kWh immessi contro 11.229 prelevati nel mese),
 quindi `EC_h = min(immesso, prelevato)` coincide quasi sempre con l'immesso.
+
+`cumulo` è il solo scenario con un impianto che cumula la tariffa premio con un contributo in
+conto capitale (fattore F, `FORMULE.md` §2 e §2-bis): senza di esso, `condivisione.
+partiziona_esente_fattore_f` e la soglia del 45% di `ripartizione.InsiemeIncentivato.
+cumulo_conto_capitale` restavano scritte e testate a sé, ma nessun percorso reale della demo le
+attraversava. Il rapporto EC/EI, 0,49, sta **fra le due soglie** (45% e 55%): il vincolo scatta
+qui perché l'unico impianto è in cumulo, e non scatterebbe alla stessa cifra se accedesse alla
+sola tariffa premio — la dimostrazione che le due soglie del §4 sono indipendenti, non un
+secondo numero ridondante. Il comune possiede l'impianto ED è utente della palestra sotto: è
+un prosumer, e la sua stessa energia condivisa è esente dal fattore F quando la consuma lui
+(ente territoriale, Regole Operative pag. 41) ma non quando la consumano studio o bar.
 
 `paese` copre la **fascia critica 0,55–0,70**, dove il vincolo scatta ma prende poco (il 5,6%
 della tariffa premio, contro il 42,6% della `concentrata`). Serve perché è la fascia in cui un
@@ -73,5 +85,5 @@ POD. Un adapter reale la prenderà da un'altra fonte.
   elettrico scritta nel CSV dei prezzi, `nord` è l'area del correttivo geografico FC_zonale
   (Regole Operative Appendice B §2 pag. 160). Sono due partizioni diverse dell'Italia e
   coincidono solo perché questa CER è in Emilia-Romagna.
-- I profili di consumo sono **di forma, non campionari**: nessuno dei tre scenari è la copia di
-  una CER esistente.
+- I profili di consumo sono **di forma, non campionari**: nessuno dei quattro scenari è la copia
+  di una CER esistente.

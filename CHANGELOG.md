@@ -128,6 +128,35 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
   altri due scenari non esercitavano.
 - Nomi riservati `VOCE_FONDI` e `FONDO_ECCEDENTARIO`, e vocabolari chiusi per ruoli e
   criteri di riparto (*8 agosto 2026*). Vedi "Corretto" per cosa succedeva senza.
+- Quarto scenario mock `cumulo` (*21 agosto 2026*): un impianto FV comunale da 47 kW che
+  cumula la tariffa premio con un contributo in conto capitale (F = 0,30), davanti a
+  cinque utenze, tre esenti dal fattore F (il comune stesso, ente territoriale, e due
+  famiglie) e due no (studio e bar, imprese). `__main__.elabora` smista ora ogni
+  impianto in uno di DUE secchi possibili secondo il proprio fattore F, e un impianto
+  in cumulo passa da `condivisione.partiziona_esente_fattore_f` prima di tariffare,
+  con `tariffe.incentivo_periodo` chiamata due volte (F = 0 sulla parte esente, F
+  sull'altra). L'insieme passato a `scomponi_eccedentario_insiemi` è così, per la
+  prima volta, quello `cumulo_conto_capitale` e non `sola_tariffa` — resta UN insieme
+  alla volta: `elabora` rifiuta esplicitamente, con `NotImplementedError` e un test
+  dedicato che ne verifica il messaggio, uno scenario che ne popolasse due
+  contemporaneamente. Chiude un rilievo di revisione permanente: fino a
+  questa voce `partiziona_esente_fattore_f` era scritta e testata a sé ma priva di un
+  percorso reale che la chiamasse — la stessa specie di difetto da cui erano già nati
+  cinque bug da denaro (`docs/ROADMAP.md`, voci 6 e 8).
+
+  Il rapporto EC/EI dello scenario, **0,4881**, sta fra le due soglie del vincolo
+  eccedentario: sopra il 45% del cumulo con conto capitale, sotto il 55% della sola
+  tariffa premio. Con questi stessi numeri e la sola tariffa premio il vincolo NON
+  scatterebbe — è la dimostrazione che le due soglie del §4 sono indipendenti, non un
+  secondo numero ridondante. Il vincolo eccedentario scatta e prende **14,76 € del
+  387,17 € di TIP (3,8%)**. Verificata anche l'identità esatta (non solo a livello di
+  centesimo) fra "l'esenzione preserva T_esente × F" e "applicare F a tutta l'energia
+  costerebbe il 19,75% del contributo in più" — le due grandezze sono uguali come
+  `Decimal`, non solo simili dopo un arrotondamento indipendente.
+
+  I tre scenari precedenti (`equilibrata`, `paese`, `concentrata`) restano identici
+  byte per byte: verificato per confronto diretto dei sei file di rendiconto (Markdown
+  e CSV) con lo stato prima di questa voce.
 
 ### Corretto
 
