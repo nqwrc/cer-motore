@@ -101,6 +101,19 @@ perché genera i propri dati:
 2. **Risolvere il fuso una volta sola, al confine.** Convertire i timestamp dell'export in
    una griglia oraria locale e restituire liste posizionali. Da lì in poi il motore non sa
    più che ora sia, e va bene così.
+
+   *Vincolo pratico, verificato il 22 agosto 2026*: `zoneinfo` è nella libreria standard
+   dalla 3.9, ma **su Windows non trova alcun fuso** senza il pacchetto `tzdata`
+   (`ZoneInfoNotFoundError: 'No time zone found with key Europe/Rome'`, misurato con
+   Python 3.13.14), perché il sistema non ha un database tz e `zoneinfo.TZPATH` è vuoto. La CI
+   gira anche su Windows
+   (`test.yml`) e il motore dichiara di non avere dipendenze di runtime: chi scriverà
+   l'adapter sceglie fra prendersi `tzdata` come dipendenza dichiarata dell'adapter — non
+   del motore — e derivare la regola aritmeticamente, che per l'Unione Europea è fissa e
+   citabile (direttiva 2000/84/CE: ultima domenica di marzo e ultima domenica di ottobre,
+   alle 01:00 UTC). La seconda strada evita la dipendenza; la prima evita di riscrivere
+   una regola che qualcun altro mantiene. Nessuna delle due si può imboccare prima di
+   sapere come l'export rappresenta i timestamp, che è la domanda 2 del §4.
 3. **Dichiarare la provenienza di ogni serie.** Misura effettiva o stimata, acconto o
    conguaglio: se l'export lo distingue, l'informazione va portata fuori dall'adapter, non
    persa. Un rendiconto costruito su misure stimate deve poterlo dire.

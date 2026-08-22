@@ -120,13 +120,30 @@ Tre precisazioni che è facile confondere:
   giuridico sul titolare del POD e non è deducibile dalle misure: il motore la riceve dal
   chiamante come elenco di POD, e non fa parte dell'export GSE (vedi `ADAPTER-GSE.md`);
 - il **perimetro**: `prelievi` deve essere l'insieme completo dei punti di prelievo della
-  configurazione. Un sottoinsieme troncato sposta energia fra le due quote in silenzio,
-  nella direzione del troncamento — quota esente gonfiata se mancano POD non esenti,
-  esenzione sparita se mancano POD esenti — e l'invariante `esente + non_esente = EC`
-  regge comunque, quindi nulla lo segnala. Il motore intercetta solo il caso estremo —
-  un'ora con EC > 0 e prelievi tutti nulli, impossibile per costruzione di EC — e lo
-  rifiuta; la completezza vera resta una responsabilità del chiamante, come la
-  classificazione.
+  configurazione. Un sottoinsieme troncato sposta energia fra le due quote nella direzione
+  del troncamento — quota esente gonfiata se mancano POD non esenti, esenzione sparita se
+  mancano POD esenti — e l'invariante `esente + non_esente = EC` regge comunque, quindi
+  non è da lì che lo si scopre. La completezza in sé resta una responsabilità del
+  chiamante, come la classificazione, ma la sua **conseguenza è verificata dal 22 agosto
+  2026**, e la disuguaglianza che la verifica viene dal §1: essendo
+  `EC = min(E_immessa; E_prelevata)` sulla configurazione intera, l'energia condivisa di
+  un'ora non può eccedere il prelievo totale della stessa ora. Se lo eccede, il perimetro
+  ricevuto è troncato, e `partiziona_esente_fattore_f` solleva `ValueError` nominando
+  l'ora e i due valori. Il confronto è a senso unico — la serie in ingresso è al più l'EC
+  di configurazione, di norma la quota di un solo impianto — e i due lati si confrontano
+  sulla stessa griglia di quantizzazione, perché `alloca_oraria` arrotonda EC in su e un
+  confronto contro il prelievo grezzo accuserebbe perimetri completi. Verificato sui
+  quattro scenari mock, ogni impianto, dodici mesi, a sei risoluzioni e su entrambe le
+  serie ammesse (quota per impianto ed EC di configurazione): **zero falsi positivi su
+  720 combinazioni**. Misurato su `cumulo`: togliendo il bar dal perimetro la
+  quota esente passava da 1.966,142 a 2.468,219 kWh e la tariffa premio da 387,17 a
+  406,71 €, **+19,54 € (+5,05%) sottratti alla decurtazione**, con la guardia precedente
+  (prelievi tutti nulli) muta in tutte e 720 le ore e questa che scatta in 346. Il caso
+  peggiore misurato è però l'altro verso: tolta la palestra, punto di prelievo esente e
+  il più grosso dei tre, l'esenzione sparisce e il TIP scende di **50,19 € (−12,96%)**.
+  Resta scoperto il troncamento che non morde in nessuna ora, cioè POD la cui energia
+  sta sempre sopra la linea di EC: la verifica rende il silenzio condizionato, non
+  impossibile.
 
 Se i tracciati GSE prescriveranno un criterio di attribuzione, va sostituito questo.
 

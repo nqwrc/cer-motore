@@ -160,6 +160,39 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
 
 ### Corretto
 
+- **Un perimetro `prelievi` troncato gonfiava l'energia esente dal fattore F, in silenzio**
+  (*22 agosto 2026*). `condivisione.partiziona_esente_fattore_f` riceve dal chiamante
+  l'elenco dei punti di prelievo e non può sapere se sia completo: se ne manca uno,
+  `alloca_oraria` ridistribuisce comunque l'energia condivisa fra quelli rimasti, pro-quota,
+  e l'invariante `esente + non_esente = EC` regge esatto — quindi nulla lo segnalava. La
+  guardia esistente cercava solo le ore con i prelievi TUTTI nulli, cioè il caso estremo.
+  **Misurato sullo scenario `cumulo` (F = 0,30): togliendo dal perimetro il bar, un punto
+  di prelievo non esente, l'energia esente passava da 1.966,142 a 2.468,219 kWh e la
+  tariffa premio da 387,17 a 406,71 €, cioè +19,54 € (+5,05%) mai decurtati**; togliendo lo
+  studio, +21,22 € (+5,48%). Nel verso opposto, tolto un punto di prelievo esente,
+  l'esenzione spariva: −2,82 € e −2,85 € per le due famiglie, e **−50,19 € (−12,96%) per
+  la palestra**, che è il caso peggiore misurato in assoluto. La guardia precedente taceva
+  in tutte e 720 le ore in ognuno dei casi.
+
+  La completezza in sé resta non verificabile — il motore non conosce l'anagrafica — ma la
+  sua conseguenza sì, ed è una disuguaglianza che viene dalla norma: essendo
+  `EC = min(E_immessa; E_prelevata)` sulla configurazione intera (`docs/FORMULE.md` §1),
+  l'energia condivisa di un'ora non può eccedere il prelievo totale della stessa ora. Ora
+  `ValueError` nomina quante ore non tornano, la prima, e i due valori. Il confronto è a
+  senso unico: la serie in ingresso è al più l'EC di configurazione, di norma la quota di
+  un solo impianto. I due lati si confrontano **sulla stessa griglia di quantizzazione**, e
+  non è un dettaglio: `alloca_oraria` arrotonda EC in su a `decimali`, quindi il confronto
+  contro la somma grezza dei prelievi accusava di troncamento perimetri completi e
+  legittimi — riprodotto con prelievi 0,6000005 + 0,4 su un impianto solo, e su 169 delle
+  720 ore di `cumulo` a `decimali = 2`. Con entrambi i lati quantizzati: verificato sui
+  quattro scenari, ogni impianto, dodici mesi, sei risoluzioni e le due serie ammesse in
+  ingresso — **zero falsi positivi su 720 combinazioni**, e uguaglianza esatta là dove è
+  il prelievo a vincolare EC (316 ore su
+  720 in `cumulo`), che è la ragione per cui la guardia è `>` e non `>=`. Nei casi di
+  troncamento sopra scatta rispettivamente in 346, 340 e 330 ore. Resta scoperto il troncamento
+  che non morde in nessuna ora: la verifica rende il
+  silenzio condizionato, non impossibile, e `docs/FORMULE.md` §2-bis lo dice.
+
 - **Un ruolo scritto male spostava denaro fra i soci, in silenzio** (*8 agosto 2026*).
   Un membro con un ruolo non riconosciuto non entrava in nessuno dei due blocchi: restava
   con un esito vuoto e la sua quota veniva ripartita fra gli altri. Misurato: con
@@ -245,7 +278,8 @@ dalla sezione "Fatti" di `docs/ROADMAP.md`.
 - **Parte variabile della tariffa premio riportata alla forma normativa** (*7 agosto 2026*).
   Verifica verbatim sulle Regole Operative pag. 40 e Appendice B §1 pag. 160, confermata dal
   DM CACER 414/2023 All. 1 §1: la parte variabile è `max(0; 180 − Pz)` con Pz prezzo zonale
-  **orario**, e il tetto normativo è il CAP sulla somma, `min[CAP; TP_base + max(0; 180 − Pz)]`.
+  **orario**, e il tetto normativo è il CAP sulla somma, `min[CAP; TP_base + max(0; 180 −
+  Pz)]`.
   Il motore usava `max(0, min(40, 180 − Pz))`, che dà gli stessi numeri **solo** perché
   `CAP − TP_base = 40` in tutti e tre gli scaglioni, e avrebbe sbagliato in silenzio il
   giorno in cui un aggiornamento avesse mosso i due parametri in modo non parallelo.

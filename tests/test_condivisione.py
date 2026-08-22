@@ -227,13 +227,39 @@ def test_partiziona_esente_fattore_f_serie_disallineate():
         partiziona_esente_fattore_f({"X": [D(1)]}, [D(1), D(5)], ["X"])
 
 
-def test_partiziona_esente_fattore_f_rifiuta_ec_senza_prelievi():
-    # Un'ora con EC > 0 e prelievi tutti nulli e' impossibile per costruzione di EC
-    # (min di immissioni e prelievi sulla configurazione intera): puo' esistere solo se
-    # `prelievi` e' un perimetro troncato. Senza questa guardia le due serie uscivano
-    # entrambe a zero e l'ora spariva in silenzio, invariante compreso.
-    with pytest.raises(ValueError, match="senza alcun prelievo"):
+def test_partiziona_esente_fattore_f_rifiuta_ec_oltre_il_prelievo_totale():
+    # EC e' min(immissioni; prelievi) sulla configurazione intera, quindi EC[h] non puo'
+    # eccedere il prelievo totale dell'ora: se lo eccede, `prelievi` e' troncato. La
+    # guardia copre l'intera disuguaglianza, non il solo caso limite dei prelievi nulli.
+    #
+    # Caso a mano: prelievi 2+1=3, EC=4. Impossibile su un perimetro completo, perche'
+    # EC <= 3. Senza la guardia, `alloca_oraria` ripartisce comunque i 4 kWh pro-quota
+    # (2,667 a X e 1,333 a Y): X e' esente, quindi la quota esente esce a 2,667 invece
+    # dei 2 che X ha davvero prelevato, e quei 0,667 kWh sfuggono alla decurtazione.
+    with pytest.raises(ValueError, match="maggiore del prelievo totale"):
+        partiziona_esente_fattore_f({"X": [D(2)], "Y": [D(1)]}, [D(4)], ["X"])
+    # Prelievi tutti nulli con EC > 0: e' il caso estremo della stessa disuguaglianza
+    # (totale zero), non una guardia separata.
+    with pytest.raises(ValueError, match="maggiore del prelievo totale"):
         partiziona_esente_fattore_f({"X": [D(0)], "Y": [D(0)]}, [D(5)], ["X"])
-    # L'ora incoerente e' nominata nel messaggio.
-    with pytest.raises(ValueError, match=r"ore \[1\]"):
+    # Il messaggio nomina quante ore, la prima, e i due valori che non tornano.
+    with pytest.raises(ValueError, match=r"in 1 ora.*ora 1, EC 5 kWh > prelievi 0 kWh"):
         partiziona_esente_fattore_f({"X": [D(1), D(0)]}, [D(1), D(5)], ["X"])
+
+
+def test_partiziona_esente_fattore_f_ammette_ec_pari_al_prelievo_totale():
+    # L'uguaglianza e' il caso NORMALE, non un bordo da rifiutare: e' l'ora in cui a
+    # vincolare EC e' il prelievo e non l'immissione, e sui mock, misurato su tutti e
+    # dodici i mesi a livello di configurazione, sta fra il 41,7% (`paese`) e il 53,6%
+    # (`equilibrata`) delle ore; `concentrata` fra il 4,2% e il 5,9%. Una guardia
+    # scritta con >= invece che con > le rifiuterebbe tutte.
+    esente, non_esente = partiziona_esente_fattore_f(
+        {"X": [D(2)], "Y": [D(1)]}, [D(3)], ["X"]
+    )
+    assert esente == [D(2)] and non_esente == [D(1)]
+    # E il verso opposto resta libero: EC molto sotto il prelievo totale e' l'ora in cui
+    # a vincolare e' l'immissione.
+    esente, non_esente = partiziona_esente_fattore_f(
+        {"X": [D(2)], "Y": [D(1)]}, [D("0.3")], ["X"]
+    )
+    assert esente[0] + non_esente[0] == D("0.3")

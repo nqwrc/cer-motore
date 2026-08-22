@@ -18,7 +18,9 @@ Il gate d'installazione, invece, è **verificato il 20 agosto 2026** su un clone
 fresco (Windows, con Python 3.13 già installato e cache pip calda: chi parte davvero da
 zero aggiunge i propri download), percorso del README eseguito alla lettera: clone 1,4 s,
 venv 8,7 s, install 17,5 s, suite 184 test verdi in 3,9 s, demo 0,4 s con i dodici file
-attesi sotto `data/`. Trentadue secondi contro i quindici minuti del gate: a tenere aperta
+attesi allora sotto `data/`. I due conteggi sono cresciuti con il quarto scenario: al
+22 agosto la suite è di 190 test e la demo scrive 16 file. Trentadue secondi contro i quindici
+minuti del gate: a tenere aperta
 la v0.1 resta la voce 9, non l'esperienza di installazione.
 
 L'elenco numerato qui sotto è cronologico e le voci sono citate per numero dal codice e
@@ -51,10 +53,11 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
    `contributo_prelievo_coincidente` è stata riportata sulla stessa base: aveva lo stesso
    difetto e un docstring che dichiarava un invariante che non aveva.
 4. **20 casi risolti a mano** — *fatto 7 agosto 2026*, obiettivo superato: 51 test allora,
-   **188 oggi** (21 agosto 2026), di cui una buona metà sono casi a mano veri (calcolo passo
+   **190 oggi** (22 agosto 2026), di cui una buona metà sono casi a mano veri (calcolo passo
    per passo nel commento) e il resto guardie di contratto. Coperti prosumer, impianti misti
    FV/non-FV, giorni da 23/25 ore, periodo interamente senza immissioni, arrotondamenti
-   cattivi al centesimo, bordi del cap, cumulo con contributo in conto capitale (voce 16).
+   cattivi al centesimo, bordi del cap, cumulo con contributo in conto capitale (voce 16),
+   perimetro dei prelievi troncato.
 
 5. ~~**Un secondo scenario mock sopra soglia**~~ — *fatto 7 agosto 2026*. `mock.py` non
    genera più una sola CER: espone uno `Scenario` (impianti, utenze, anagrafica, zone) e
@@ -306,3 +309,25 @@ dai commenti: le voci chiuse restano al loro posto, barrate, con quello che si �
     nostri e non prescritti — `Scenario.pod_esenti_fattore_f` è anagrafica del mock, non
     una risposta alla domanda. Cablare la partizione in un percorso reale non la risolve,
     la rende visibile.
+
+    *22 agosto 2026, il terzo residuo è chiuso*: la **completezza del perimetro dei
+    prelievi** era il più pericoloso dei tre, perché a differenza degli altri due non era
+    una scelta dichiarata ma un errore possibile e muto. Non si verifica la completezza —
+    il motore non ha anagrafica — ma la disuguaglianza che la norma impone:
+    `EC = min(E_immessa; E_prelevata)` sulla configurazione intera, quindi l'energia
+    condivisa di un'ora non può eccedere il prelievo totale della stessa ora. Misurato su
+    `cumulo`: un perimetro senza il bar gonfiava l'energia esente del 25,5% e la tariffa
+    premio di **+19,54 € (+5,05%) mai decurtati**, e nel verso opposto, senza la palestra,
+    l'esenzione spariva per **−50,19 € (−12,96%)** — con la guardia precedente muta in
+    tutte e 720 le ore in entrambi i casi. I due lati del confronto vanno portati sulla
+    stessa griglia di quantizzazione prima di confrontarli: `alloca_oraria` arrotonda EC
+    in su, e una verifica avversariale ha trovato che senza quantizzare anche il prelievo
+    la guardia accusava perimetri completi e legittimi (169 ore su 720 in `cumulo` a
+    `decimali = 2`). Quantizzarne uno solo non basta e una seconda passata l'ha
+    dimostrato: il difetto si specchia, ed è l'EC grezza a sfondare un prelievo
+    arrotondato in giù. Con entrambi i lati quantizzati, zero falsi positivi su 720
+    combinazioni (quattro scenari, ogni impianto, dodici mesi, sei risoluzioni, le due
+    serie ammesse in ingresso); 316 ore
+    su 720 stanno all'uguaglianza esatta, che è la ragione per cui la guardia è `>` e non
+    `>=`. Resta scoperto il troncamento che non morde in nessuna ora: silenzio
+    condizionato, non impossibile.

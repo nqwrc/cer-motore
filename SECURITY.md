@@ -150,14 +150,21 @@ ingresso sono generati da `mock.py` secondo un'assunzione documentata in
 [`docs/MOCK-GSE.md`](docs/MOCK-GSE.md). Le formule sono verificate verbatim sui documenti
 ufficiali, ma la verifica del vincolo eccedentario è applicata al periodo di calcolo mentre
 il GSE la esegue **a conguaglio su base annuale**. Nel cumulo con il contributo in conto
-capitale la partizione dell'energia esente dal fattore F è implementata, con tre avvertenze
+capitale la partizione dell'energia esente dal fattore F è implementata, con due avvertenze
 che restano in capo al chiamante ([`docs/FORMULE.md`](docs/FORMULE.md), sezione 2-bis): il
 criterio pro-quota oraria con cui l'energia condivisa si attribuisce ai punti di prelievo è
-una scelta di modellazione dichiarata, non una prescrizione normativa; la classificazione
+una scelta di modellazione dichiarata, non una prescrizione normativa; e la classificazione
 dei POD nelle cinque categorie esenti è un fatto giuridico sul titolare, non deducibile
-dalle misure; e la completezza dell'elenco dei prelievi non è verificabile dal motore — un
-elenco troncato sposta energia fra le due quote in silenzio, con l'invariante di somma
-soddisfatto.
+dalle misure. La terza — la completezza dell'elenco dei prelievi — non è più affidata alla
+sola buona fede del chiamante: dal 22 agosto 2026 un perimetro troncato che porti l'energia
+condivisa di un'ora sopra il prelievo totale della stessa ora è rifiutato, perché la norma
+lo rende impossibile (`EC = min(E_immessa; E_prelevata)`, sezione 1). Sui dati mock il
+silenzio valeva, a seconda del punto di prelievo mancante, dal 5% di tariffa premio mai
+decurtata al 13% tolto a chi la norma esentava. **Non è una verifica della completezza**,
+che il motore non può fare: un troncamento che non porti mai l'energia condivisa oraria
+sopra il prelievo totale della stessa ora passa ancora in silenzio. Il perimetro resta
+una responsabilità del chiamante; quello che è cambiato è che l'errore più grosso ora si
+manifesta invece di restare muto.
 Punti aperti aggiornati in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 Il progetto non è approvato, validato o certificato dal GSE, da ARERA o da alcuna autorità:

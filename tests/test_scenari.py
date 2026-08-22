@@ -349,6 +349,60 @@ def test_end_to_end_lo_scenario_cumulo_fa_scattare_leccedentario_alla_soglia_del
     assert sum(v for voci in esito.values() for v in voci.values()) == 41529
 
 
+def test_end_to_end_un_perimetro_troncato_e_rifiutato_invece_di_gonfiare_lesenzione(tmp_path):
+    # LA GUARDIA CHE CHIUDE IL RESIDUO DELLA VOCE 13, misurata sullo scenario che la
+    # esercita davvero. `partiziona_esente_fattore_f` riceve `prelievi` dal chiamante e
+    # non puo' sapere se sia l'insieme COMPLETO dei punti di prelievo: fino al 22 agosto
+    # 2026 un perimetro troncato passava in silenzio, e la docstring lo dichiarava come
+    # precondizione non verificabile. Verificabile non e' la completezza, ma la sua
+    # conseguenza: EC e' min(immissioni; prelievi) sulla configurazione intera
+    # (FORMULE.md 1), quindi EC[h] non puo' eccedere il prelievo totale dell'ora.
+    #
+    # QUANTO VALEVA IL SILENZIO. Tolto dal perimetro il bar (IT001E0000406X, NON esente
+    # dal fattore F), `alloca_oraria` ridistribuisce la sua quota fra i POD rimasti,
+    # pro-quota: tre dei quattro sono esenti, quindi l'energia esente si gonfia e la
+    # decurtazione TIP * (1 - F) non la tocca.
+    #   esente     1966,142362 -> 2468,219216 kWh   (+502,076854, +25,5%)
+    #   non esente 1455,082638 ->  953,005784 kWh
+    #   TIP        387,165865975630 -> 406,705741905022 EUR
+    #   delta      +19,539875929392 EUR = +1954 centesimi, +5,05% mai decurtati
+    # Nessun invariante se ne accorgeva: esente + non_esente == EC restava esatta, perche'
+    # e' `alloca_oraria` a garantirla su QUALUNQUE mappa le si passi.
+    f_mis, f_pz = mock.genera(tmp_path, scenario=mock.CUMULO)
+    immissioni, prelievi, prezzi = mock.carica(f_mis, f_pz)
+    ec = energia_condivisa(immissioni, prelievi)
+    ec_pod = alloca_oraria(immissioni, ec)["IT001E0000401S"]
+
+    # Il perimetro completo passa e da' i numeri gia' inchiodati dal test end-to-end.
+    esente, non_esente = partiziona_esente_fattore_f(
+        prelievi, ec_pod, mock.CUMULO.pod_esenti_fattore_f
+    )
+    assert (sum(esente, D(0)), sum(non_esente, D(0))) == (D("1966.142362"), D("1455.082638"))
+
+    # Quello troncato viene RIFIUTATO, non ripartito. `pod_esenti` resta invariato: i tre
+    # POD esenti sono tutti ancora presenti, quindi la guardia sui POD ignoti non puo'
+    # scattare ed e' davvero questa a parlare.
+    troncato = {p: s for p, s in prelievi.items() if p != "IT001E0000406X"}
+    with pytest.raises(ValueError, match="maggiore del prelievo totale") as errore:
+        partiziona_esente_fattore_f(troncato, ec_pod, mock.CUMULO.pod_esenti_fattore_f)
+    # La prima ora incoerente e i due valori che non tornano stanno nel messaggio: e' il
+    # dato che serve a capire QUALE POD manca, che il motore non puo' dedurre da solo.
+    assert "in 346 ore" in str(errore.value)
+    assert "ora 7, EC 7.027000 kWh > prelievi 4.409 kWh" in str(errore.value)
+
+    # IL VERSO OPPOSTO, e la ragione per cui la guardia e' > e non >=: sul perimetro
+    # completo l'uguaglianza e' l'ora ordinaria in cui a vincolare EC e' il prelievo, e
+    # in `cumulo` sono 316 ore su 720. Se la guardia le rifiutasse, lo scenario intero
+    # non passerebbe. Si misura su `ec_pod`, che e' la serie che la guardia legge
+    # davvero, e i due conteggi coincidono qui solo PERCHE' l'impianto e' uno solo: in
+    # `equilibrata`, che ne ha due, a giugno sono 386 a livello di configurazione e 0
+    # per impianto. Misurare sulla serie sbagliata darebbe un test che regge per una
+    # ragione che non e' quella che dichiara.
+    n = len(ec)
+    totali = [sum((s[h] for s in prelievi.values()), D(0)) for h in range(n)]
+    assert sum(1 for h in range(n) if ec_pod[h] == totali[h]) == 316
+
+
 def test_lo_scenario_paese_ha_un_prosumer_che_non_e_unimpresa():
     # Combinazione che né `equilibrata` né `concentrata` esercitano: il comune possiede
     # l'impianto sulla palestra ED è utente della palestra, quindi è un prosumer, ma non

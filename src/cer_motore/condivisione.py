@@ -195,15 +195,49 @@ def partiziona_esente_fattore_f(
     non una grandezza che il motore possa dedurre dalle misure.
 
     PRECONDIZIONE SUL PERIMETRO: `prelievi` deve essere l'insieme COMPLETO dei punti di
-    prelievo della configurazione, non un sottoinsieme. La completezza non è verificabile
-    da qui — il motore non conosce l'anagrafica — ma il suo caso estremo sì: un'ora con
-    EC > 0 e prelievi tutti nulli è impossibile (EC è min(immissioni; prelievi) sulla
-    configurazione intera) e solleva ValueError. Con una mappa troncata ma non nulla
-    l'errore è silenzioso e va nella direzione del troncamento: tolti POD non esenti,
-    la quota esente si gonfia e la decurtazione non viene mai applicata; tolti POD
-    esenti (con `pod_esenti` troncato coerentemente, così la guardia sui POD ignoti
-    non può scattare), l'esenzione sparisce e la decurtazione colpisce chi la norma
-    risparmiava. FORMULE.md §2-bis, "il perimetro".
+    prelievo della configurazione, non un sottoinsieme. La completezza in sé non è
+    verificabile da qui — il motore non conosce l'anagrafica — ma la sua CONSEGUENZA
+    misurabile sì, ed è una disuguaglianza che viene dalla norma: EC è
+    min(immissioni; prelievi) sulla configurazione intera (FORMULE.md §1), quindi
+    `ec[h]` non può eccedere il prelievo totale dell'ora. Se lo eccede, `prelievi` è
+    troncato, e la funzione solleva ValueError nominando l'ora e i due valori.
+
+    Il confronto è a SENSO UNICO — la serie in ingresso è al più l'EC di configurazione,
+    e di norma la quota di un solo impianto, che ne è una frazione — e i due lati si
+    confrontano sulla stessa griglia di `decimali` (vedi il commento alla guardia: senza
+    quantizzare anche il prelievo, l'arrotondamento in su di `alloca_oraria` accusava
+    perimetri completi). Verificato sui quattro scenari mock, ogni impianto, tutti e
+    dodici i mesi, a sei risoluzioni (`decimali` 0, 1, 2, 3, 6, 12) e su ENTRAMBE le
+    serie che questa docstring dichiara ammissibili — la quota per impianto e l'EC di
+    configurazione: **zero falsi positivi su 720 combinazioni**. La seconda serie non è
+    un di più: è su quella che una verifica avversariale ha trovato il difetto speculare
+    descritto alla guardia, che il solo sweep per impianto non vedeva.
+
+    Uguaglianza esatta là dove è il prelievo a vincolare EC: 316 ore su 720 in `cumulo`,
+    36 in `concentrata`, nessuna nei due scenari a due impianti. Quest'ultimo fatto è
+    dei mock e non delle configurazioni a più impianti in generale: `mock._produzione_fv`
+    dà a ogni impianto la stessa curva solare e la stessa nuvolosità oraria, quindi i due
+    immettono sempre insieme e la quota di ciascuno resta una frazione dell'EC. Con
+    tecnologie miste, o un impianto fermo, l'unico che immette in quell'ora prende il
+    100% dell'EC e il margine si chiude come nel caso mono-impianto.
+
+    Quanto vale, misurato su `cumulo` (F = 0,30, tre POD esenti su cinque): togliendo
+    dal perimetro il bar — un POD NON esente, quindi il verso che gonfia la quota
+    esente — l'energia esente passa da 1.966,142 a 2.468,219 kWh e la tariffa premio
+    da 387,17 a 406,71 €, cioè **+19,54 € (+5,05%) mai decurtati**; togliendo lo
+    studio, +21,22 € (+5,48%). La guardia precedente, che cercava solo le ore con
+    prelievi TUTTI nulli, taceva in entrambi i casi (0 ore su 720); questa scatta in
+    346 e 340 ore. Nell'altro verso — tolto un POD esente, con `pod_esenti` troncato
+    coerentemente perché la guardia sui POD ignoti non scatti — l'esenzione sparisce e
+    il TIP scende: −2,82 € e −2,85 € per le due famiglie (330 ore), **−50,19 € cioè
+    −12,96% per la palestra** (378 ore), che è il punto di prelievo più grosso dei tre
+    ed è il caso peggiore misurato in assoluto, in entrambi i versi.
+
+    Quel che resta scoperto, ed è la ragione per cui questa resta una PRECONDIZIONE e
+    non diventa una verifica: un troncamento che non morda in nessuna ora — POD la cui
+    energia sta sempre sopra la linea di EC — passa ancora in silenzio. La guardia
+    trasforma "sempre muto" in "muto solo se il troncamento non tocca mai il vincolo",
+    non in "impossibile". FORMULE.md §2-bis, "il perimetro".
     """
     ignoti = sorted(set(pod_esenti) - set(prelievi))
     if ignoti:
@@ -219,17 +253,58 @@ def partiziona_esente_fattore_f(
     # valori non trattabili, con i loro messaggi. La guardia sul perimetro legge le
     # serie per indice e sarebbe un IndexError nudo se corresse per prima.
     quote = alloca_oraria(prelievi, ec, decimali)
-    ore_incoerenti = [
-        h
-        for h in range(len(ec))
-        if ec[h] > 0 and all(serie[h] == 0 for serie in prelievi.values())
-    ]
-    if ore_incoerenti:
+    # EC = min(immissioni; prelievi) sulla configurazione intera (FORMULE.md §1), quindi
+    # EC[h] non può eccedere il prelievo totale dell'ora. La serie in ingresso è al più
+    # quella EC (di norma la quota di UN impianto, che ne è una frazione), quindi il
+    # confronto è a senso unico: su un perimetro completo non scatta, e se scatta il
+    # perimetro è troncato.
+    #
+    # I DUE LATI VANNO PORTATI SULLA STESSA GRIGLIA prima di confrontarli, ed è il
+    # motivo per cui questa funzione prende `decimali`. La serie in ingresso è di norma
+    # prodotta da `alloca_oraria`, che quantizza EC a `decimali` con ROUND_HALF_UP:
+    # arrotonda dunque IN SU, fino a mezza unità. Confrontare quel valore quantizzato
+    # con la somma grezza dei prelievi accusa un perimetro completo di essere troncato
+    # ogni volta che l'arrotondamento morde su un'ora dove EC eguaglia il prelievo — e
+    # sono il 43,9% delle ore in `cumulo`. Misurato: con prelievi 0,6000005 + 0,4 e
+    # un impianto solo, la quota esce 1,000001 contro un prelievo di 1,0000005, e la
+    # guardia scattava su dati perfettamente legittimi. Quantizzando anche il prelievo
+    # con lo stesso passo e lo stesso arrotondamento il confronto torna a misurare il
+    # perimetro invece della griglia. Il margine così concesso è mezza unità di
+    # `decimali`, e SCALA CON ESSO: 5e-7 kWh con il default, quattro ordini di grandezza
+    # sotto i 3 decimali di kWh delle misure dei distributori; ma 0,005 kWh a
+    # `decimali = 2` e mezzo kWh a `decimali = 0`. La detezione non sparisce mai — un
+    # POD da 0,010 kWh/ora tolto da `cumulo` resta visto in 316 ore su 720 a `decimali`
+    # 3 e 6 — ma la SENSIBILITÀ cala con la risoluzione: lo stesso POD si vede in 38 ore
+    # a `decimali = 1` e in 4 a `decimali = 0`, dove mezzo kWh è il prelievo orario di
+    # una famiglia. Alla risoluzione di default e fino a `decimali = 3` nessun
+    # troncamento reale ci si nasconde; sotto, abbassare `decimali` abbassa con sé
+    # questa guardia, ed è un'altra ragione per non farlo su dati veri.
+    passo_confronto = Decimal(1).scaleb(-decimali)
+    incoerenti = []
+    for h in range(len(ec)):
+        totale = sum((serie[h] for serie in prelievi.values()), Decimal(0))
+        # ENTRAMBI i lati, non uno solo: quantizzare il solo prelievo non toglie il
+        # difetto, lo specchia. Con ROUND_HALF_UP un totale che ha sotto la griglia una
+        # frazione inferiore a mezza unità viene arrotondato IN GIÙ, e allora è l'EC
+        # grezza a sfondarlo — misurato con prelievi 0,6000004 + 0,4, dove EC eguaglia
+        # esattamente il prelievo e la guardia accusava lo stesso.
+        if (
+            ec[h].quantize(passo_confronto, rounding=ROUND_HALF_UP)
+            > totale.quantize(passo_confronto, rounding=ROUND_HALF_UP)
+        ):
+            incoerenti.append((h, totale))
+    if incoerenti:
+        h, totale = incoerenti[0]
+        quante = (
+            "in 1 ora" if len(incoerenti) == 1 else f"in {len(incoerenti)} ore"
+        )
         raise ValueError(
-            f"Energia condivisa positiva in ore senza alcun prelievo: ore {ore_incoerenti}. "
-            "EC è min(immissioni; prelievi) sulla configurazione intera: un'ora così può "
-            "esistere solo se `prelievi` non è l'insieme completo dei punti di prelievo "
-            "(docstring, PRECONDIZIONE SUL PERIMETRO)."
+            f"Energia condivisa maggiore del prelievo totale {quante} "
+            f"(prima: ora {h}, EC {ec[h]} kWh > prelievi {totale} kWh). EC è "
+            "min(immissioni; prelievi) sulla configurazione intera, quindi non può "
+            "eccedere il prelievo: un'ora così può esistere solo se `prelievi` non è "
+            "l'insieme completo dei punti di prelievo (docstring, PRECONDIZIONE SUL "
+            f"PERIMETRO). Punti di prelievo ricevuti: {sorted(prelievi)}."
         )
     esente, non_esente = [], []
     for h in range(len(ec)):
